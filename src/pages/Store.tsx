@@ -41,9 +41,6 @@ interface ManagersAvailable {
 
 export default function Store() {
   const { apps, groups, refresh } = useApps()
-  const installedIds = new Set(
-    apps.map(a => a.name.toLowerCase())
-  )
 
   const [managers, setManagers] = useState<ManagersAvailable | null>(null)
   const [query, setQuery] = useState('')
@@ -60,16 +57,21 @@ export default function Store() {
   const [selectedApp, setSelectedApp] = useState<WingetPackage | null>(null)
   const [appDetail, setAppDetail] = useState<WingetPackageDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [wingetInstalled, setWingetInstalled] = useState<Set<string>>(new Set())
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useGlobalSearchFocus(inputRef as React.RefObject<HTMLInputElement>)
 
-  // Check availability on mount
+  // Check availability and installed packages on mount
   useEffect(() => {
     invoke<ManagersAvailable>('winget_check')
       .then(r => setManagers(r))
       .catch(() => setManagers({ winget: false, scoop: false, choco: false }))
+
+    invoke<any[]>('winget_list_installed')
+      .then(list => setWingetInstalled(new Set(list.map(p => p.id.toLowerCase()))))
+      .catch(() => {})
   }, [])
 
   // Sync with global apps list when it changes
@@ -198,11 +200,18 @@ export default function Store() {
       if (result.success) {
         setInstallStates(s => ({ ...s, [pkg.id]: 'done' }))
         setInstallLogs(l => ({ ...l, [pkg.id]: 'Installed successfully.' }))
-        // Refresh global state so it appears on Home page
+        setWingetInstalled(prev => new Set(prev).add(pkg.id.toLowerCase()))
         await refresh()
       } else {
-        setInstallStates(s => ({ ...s, [pkg.id]: 'error' }))
-        setInstallLogs(l => ({ ...l, [pkg.id]: result.log || 'Install failed.' }))
+        const logLower = result.log.toLowerCase()
+        if (logLower.includes('already installed') || logLower.includes('another installation')) {
+          // "Already installed" but backend couldn't register — show error
+          setInstallStates(s => ({ ...s, [pkg.id]: 'error' }))
+          setInstallLogs(l => ({ ...l, [pkg.id]: 'Already installed on this PC, but Hubify could not find the app. Try adding it manually via Home → Add.' }))
+        } else {
+          setInstallStates(s => ({ ...s, [pkg.id]: 'error' }))
+          setInstallLogs(l => ({ ...l, [pkg.id]: result.log || 'Install failed.' }))
+        }
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -212,10 +221,10 @@ export default function Store() {
   }
 
   const isInstalled = (pkg: { name: string, id: string }) => {
-    // If we just installed it, consider it installed
     if (installStates[pkg.id] === 'done') return true
-    // Check if it's in the Hubify apps list
-    return apps.some(a => a.name.toLowerCase() === pkg.name.toLowerCase())
+    if (apps.some(a => a.name.toLowerCase() === pkg.name.toLowerCase())) return true
+    if (wingetInstalled.has(pkg.id.toLowerCase())) return true
+    return false
   }
 
   const handleSelectApp = async (pkg: WingetPackage) => {
@@ -275,7 +284,10 @@ export default function Store() {
     return (
       <div className="page store-detail-page">
         <div className="store-detail-header">
-          <button className="btn-back" onClick={() => setSelectedApp(null)}>← Back</button>
+          <button className="btn-back" onClick={() => setSelectedApp(null)}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            Back
+          </button>
         </div>
 
         <div className="store-detail-content">

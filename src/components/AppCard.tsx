@@ -10,9 +10,10 @@ interface Props {
   onLaunch: () => void
   onKill: () => void
   onRemove: () => void
+  isExternal?: boolean
 }
 
-export default function AppCard({ app, info, onSelect, onLaunch, onKill, onRemove }: Props) {
+export default function AppCard({ app, info, onSelect, onLaunch, onKill, onRemove, isExternal }: Props) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const running = info?.running ?? false
 
@@ -21,21 +22,30 @@ export default function AppCard({ app, info, onSelect, onLaunch, onKill, onRemov
     setMenu({ x: e.clientX, y: e.clientY })
   }
 
-  const menuItems = [
-    ...(running
-      ? [{ label: 'Kill', icon: '◼', danger: true, onClick: onKill }]
-      : [{ label: 'Launch', icon: '▶', onClick: onLaunch }]),
-    { label: 'Remove', icon: '✕', danger: true, onClick: onRemove },
-  ]
+  const menuItems = isExternal 
+    ? [
+        { label: 'Launch', icon: '▶', onClick: onLaunch },
+        { label: 'Add to Hub', icon: '+', onClick: () => {
+          // This would ideally trigger the add flow
+          // For now, it's a placeholder
+        }}
+      ]
+    : [
+        ...(running
+          ? [{ label: 'Kill', icon: '◼', danger: true, onClick: onKill }]
+          : [{ label: 'Launch', icon: '▶', onClick: onLaunch }]),
+        { label: 'Remove', icon: '✕', danger: true, onClick: onRemove },
+      ]
 
   return (
     <>
       <div
-        className={`app-card ${running ? 'running' : ''}`}
+        className={`app-card ${running ? 'running' : ''} ${isExternal ? 'external' : ''}`}
         onContextMenu={handleContextMenu}
-        onClick={onSelect}
+        onClick={isExternal ? onLaunch : onSelect}
       >
         {running && <div className="app-card-indicator" />}
+        {isExternal && <div className="external-badge">PC</div>}
 
         <div className="app-card-icon">
           {app.icon

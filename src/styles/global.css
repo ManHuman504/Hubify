@@ -35,13 +35,13 @@ body {
   padding-bottom: 30px;
 }
 
-/* Base card styling to prevent collapsing */
+/* Base card styling — structural only, visuals per component */
 .hub-card-base {
   position: relative;
   width: 100%;
   aspect-ratio: 1 / 1;
   min-height: var(--grid-size, 110px);
-  max-height: var(--grid-size, 110px); /* Strict height enforcement */
+  max-height: var(--grid-size, 110px);
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--bg-elevated);
@@ -49,10 +49,4 @@ body {
   overflow: hidden;
   cursor: pointer;
   user-select: none;
-}
-
-.hub-card-base:hover {
-  border-color: var(--accent);
-  transform: scale(1.02);
-  z-index: 10;
 }

@@ -10,8 +10,11 @@ mod job;
 mod db;
 mod autostart;
 mod uninstaller;
+mod everything;
+mod keybinds;
 
-use store::{App, Group, Store};
+use store::{App, Group, Store, CustomTheme};
+use db::{DailyActivity, AppStat, TodaySummary};
 use tauri::{Manager, Emitter};
 use window_vibrancy::{apply_mica, apply_acrylic};
 use serde::Serialize;
@@ -34,6 +37,27 @@ struct AppMetrics {
     is_autostart: bool,
 }
 
+// ── Everything ──────────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn everything_search(query: String, limit: usize, ext_filter: Option<String>) -> Result<Vec<everything::EverythingResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        everything::search(&query, limit, ext_filter.as_deref())
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn everything_search_apps(query: String, limit: usize) -> Result<Vec<everything::EverythingResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        everything::search_apps(&query, limit)
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn is_indexer_ready() -> bool {
+    everything::is_indexer_ready()
+}
+
 // ── Apps ────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -54,6 +78,7 @@ fn add_app(app: tauri::AppHandle, path: String, name: Option<String>, group_id: 
         icon: icon::extract_icon(&path),
         path,
         group_id,
+        hotkey: None,
     };
 
     let mut s = store::load(&app);
@@ -67,6 +92,97 @@ fn remove_app(app: tauri::AppHandle, id: String) {
     let mut s = store::load(&app);
     s.apps.retain(|a| a.id != id);
     store::save(&app, &s);
+}
+
+// ── Theme commands ───────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn set_active_theme(app: tauri::AppHandle, theme_id: String) {
+    let mut s = store::load(&app);
+    s.theme.active = theme_id;
+    store::save(&app, &s);
+}
+
+#[tauri::command]
+fn save_custom_theme(app: tauri::AppHandle, theme: CustomTheme) {
+    let mut s = store::load(&app);
+    // Replace existing theme with same id, or add
+    if let Some(idx) = s.theme.custom_themes.iter().position(|t| t.id == theme.id) {
+        s.theme.custom_themes[idx] = theme;
+    } else {
+        s.theme.custom_themes.push(theme);
+    }
+    store::save(&app, &s);
+}
+
+#[tauri::command]
+fn delete_custom_theme(app: tauri::AppHandle, theme_id: String) {
+    let mut s = store::load(&app);
+    s.theme.custom_themes.retain(|t| t.id != theme_id);
+    if s.theme.active == theme_id {
+        s.theme.active = "dark".to_string();
+    }
+    store::save(&app, &s);
+}
+
+// ── Analytics commands ─────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn get_daily_activity(app: tauri::AppHandle, days: i64) -> Result<Vec<DailyActivity>, String> {
+    db::get_daily_activity(&app, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_app_stats(app: tauri::AppHandle) -> Result<Vec<AppStat>, String> {
+    let mut stats = db::get_app_stats(&app).map_err(|e| e.to_string())?;
+    let s = store::load(&app);
+    for stat in &mut stats {
+        stat.name = s.apps.iter()
+            .find(|a| a.path == stat.path)
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| stat.path.rsplit('\\').next().unwrap_or(&stat.path).trim_end_matches(".exe").to_string());
+    }
+    Ok(stats)
+}
+
+#[tauri::command]
+fn get_today_summary(app: tauri::AppHandle) -> Result<TodaySummary, String> {
+    db::get_today_summary(&app).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_app_daily_detail(app: tauri::AppHandle, app_path: String, days: i64) -> Result<Vec<db::AppDailyDetail>, String> {
+    db::get_app_daily_detail(&app, &app_path, days).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_app_network_activity(app: tauri::AppHandle, app_path: String, limit: i64) -> Result<Vec<db::NetworkRecord>, String> {
+    db::get_app_network_activity(&app, &app_path, limit).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_app_hourly(app: tauri::AppHandle, app_path: String) -> Result<Vec<(String, f64)>, String> {
+    db::get_app_hourly(&app, &app_path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_app_hotkey(app: tauri::AppHandle, app_id: String, hotkey: Option<String>) -> Result<(), String> {
+    let mut s = store::load(&app);
+    if let Some(entry) = s.apps.iter_mut().find(|a| a.id == app_id) {
+        entry.hotkey = hotkey;
+        store::save(&app, &s);
+        keybinds::register_all(&app);
+        Ok(())
+    } else {
+        Err(format!("App {} not found", app_id))
+    }
+}
+
+#[tauri::command]
+fn set_global_hotkey(app: tauri::AppHandle, _hotkey: String) -> Result<(), String> {
+    // Store global hotkey preference (future) + re-register
+    keybinds::register_all(&app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -83,13 +199,7 @@ fn move_app_to_group(app: tauri::AppHandle, app_id: String, group_id: Option<Str
 
 #[tauri::command]
 fn launch_app(path: String) -> Result<(), String> {
-    let child = std::process::Command::new("cmd")
-        .args(["/C", "start", "", &path])
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    
-    job::assign(&child);
-    Ok(())
+    focus_or_launch(&path)
 }
 
 #[derive(serde::Deserialize)]
@@ -141,6 +251,92 @@ async fn get_processes_info(paths: Vec<String>) -> Result<std::collections::Hash
 #[tauri::command]
 fn kill_app(path: String) -> bool {
     process::kill_process(&path)
+}
+
+#[tauri::command]
+fn kill_process_by_pid(pid: u32) -> bool {
+    process::kill_by_pid(pid)
+}
+
+#[tauri::command]
+async fn get_all_processes() -> Result<Vec<process::AllProcessEntry>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut processes = process::get_all_processes();
+        // Add network connection counts for top processes
+        for p in &mut processes {
+            p.connections = network::count_connections(p.pid);
+        }
+        Ok(processes)
+    }).await.map_err(|e| e.to_string())?
+}
+
+/// Focus an existing window of a running app, or launch it if not running
+fn focus_or_launch(path: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let info = process::get_process_info(path);
+        if info.running {
+            if let Some(pid) = info.pid {
+                unsafe {
+                    use windows::Win32::UI::WindowsAndMessaging::*;
+                    use windows::Win32::Foundation::*;
+                    use std::sync::Mutex;
+
+                    let result: Mutex<isize> = Mutex::new(0);
+                    let result_ptr = LPARAM(&result as *const _ as isize);
+
+                    extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+                        unsafe {
+                            let result = &*(lparam.0 as *const Mutex<isize>);
+                            let mut window_pid: u32 = 0;
+                            let target_pid = *result.lock().unwrap() as u32;
+                            let _ = GetWindowThreadProcessId(hwnd, Some(&mut window_pid));
+                            if window_pid == target_pid {
+                                *result.lock().unwrap() = hwnd.0 as isize;
+                                return FALSE;
+                            }
+                        }
+                        TRUE
+                    }
+
+                    *result.lock().unwrap() = pid as isize;
+                    let _ = EnumWindows(Some(enum_proc), result_ptr);
+
+                    let hwnd_val = *result.lock().unwrap();
+                    if hwnd_val != pid as isize && hwnd_val != 0 {
+                        let hwnd = HWND(hwnd_val as *mut _);
+                        if IsIconic(hwnd).as_bool() {
+                            let _ = ShowWindow(hwnd, SW_RESTORE);
+                        }
+                        let _ = SetForegroundWindow(hwnd);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    // Try direct spawn first so the app becomes a child process of Hubify
+    let path_lower = path.to_lowercase();
+    if path_lower.ends_with(".exe") || path_lower.ends_with(".bat") || path_lower.ends_with(".cmd") {
+        if let Ok(child) = std::process::Command::new(path).spawn() {
+            job::assign(&child);
+            return Ok(());
+        }
+    }
+
+    // Fallback: use cmd start for protocol URLs or non-executables
+    let child = std::process::Command::new("cmd")
+        .args(["/C", "start", "", path])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    job::assign(&child);
+    Ok(())
+}
+
+#[tauri::command]
+fn focus_or_launch_app(path: String) -> Result<(), String> {
+    focus_or_launch(&path)
 }
 
 #[tauri::command]
@@ -529,6 +725,13 @@ fn mark_setup_complete(app: tauri::AppHandle) {
     setup::save_state(&app, &state);
 }
 
+#[tauri::command]
+fn reset_setup_status(app: tauri::AppHandle) {
+    let mut state = setup::load_state(&app);
+    state.completed = false;
+    setup::save_state(&app, &state);
+}
+
 // ── Store (Universal) ────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -606,33 +809,57 @@ async fn winget_install(
             winget::install(&id)
         };
 
+        // Attempt to register the app in the store (find exe, extract icon)
+        let try_register = |name: &str, app_handle: &tauri::AppHandle| -> (Option<String>, Option<String>) {
+            let exe = find_installed_exe(name);
+            let mut ico = exe.as_deref().and_then(|p| icon::extract_icon(p));
+            if ico.is_none() {
+                ico = fallback_icon.clone();
+            }
+            if let Some(ref path) = exe {
+                let entry = App {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    name: name.to_string(),
+                    path: path.clone(),
+                    icon: ico.clone(),
+                    group_id: group_id.clone(),
+                    hotkey: None,
+                };
+                let mut s = store::load(app_handle);
+                if !s.apps.iter().any(|a| a.path.to_lowercase() == path.to_lowercase()) {
+                    s.apps.push(entry);
+                    store::save(app_handle, &s);
+                }
+            }
+            (exe, ico)
+        };
+
         if !success {
+            let log_lower = log.to_lowercase();
+            if log_lower.contains("already installed") || log_lower.contains("another installation") {
+                // Registry already has the entry — try to register immediately
+                let (exe_path, icon) = try_register(&name, &app_handle_clone);
+                if exe_path.is_some() {
+                    return InstallResult { success: true, log, exe_path, icon };
+                }
+            }
             return InstallResult { success: false, log, exe_path: None, icon: None };
         }
 
-        // Wait a bit for the installation to finish and registry to update
+        // Wait a bit for the installation to settle and registry to update
         std::thread::sleep(std::time::Duration::from_secs(3));
 
-        let exe_path = find_installed_exe(&name);
-        let mut icon = exe_path.as_deref().and_then(|p| icon::extract_icon(p));
-        if icon.is_none() {
-            icon = fallback_icon;
-        }
+        let (exe_path, icon) = try_register(&name, &app_handle_clone);
 
-        if let Some(ref path) = exe_path {
-            let entry = App {
-                id: uuid::Uuid::new_v4().to_string(),
-                name: name.clone(),
-                path: path.clone(),
-                icon: icon.clone(),
-                group_id,
+        // If we still couldn't find the exe, report failure so the frontend
+        // doesn't show "Installed" for an app that wasn't actually saved.
+        if exe_path.is_none() {
+            return InstallResult {
+                success: false,
+                log: format!("{}\n⚠ Winget reported success but the app was not found in the system registry.", log),
+                exe_path: None,
+                icon: None,
             };
-            let mut s = store::load(&app_handle_clone);
-            // Case-insensitive path check
-            if !s.apps.iter().any(|a| a.path.to_lowercase() == path.to_lowercase()) {
-                s.apps.push(entry);
-                store::save(&app_handle_clone, &s);
-            }
         }
 
         InstallResult { success: true, log, exe_path, icon }
@@ -739,6 +966,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(keybinds::plugin())
         .setup(move |app| {
             job::init();
             let app_handle = app.handle().clone();
@@ -749,6 +977,20 @@ pub fn run() {
             }
 
             let window = app.get_webview_window("main").unwrap();
+
+            // Set window and tray icon from embedded PNG
+            let icon_bytes = include_bytes!("../icons/icon.png");
+            let app_icon = ::image::load_from_memory(icon_bytes).ok()
+                .map(|img| img.to_rgba8())
+                .map(|rgba| {
+                    let (w, h) = (rgba.width(), rgba.height());
+                    let pixels = rgba.into_raw();
+                    tauri::image::Image::new_owned(pixels, w, h)
+                });
+            
+            if let Some(ref icon) = app_icon {
+                let _ = window.set_icon(icon.clone());
+            }
             
             if apply_mica(&window, Some(true)).is_err() {
                 let _ = apply_acrylic(&window, Some((18, 18, 20, 180)));
@@ -757,6 +999,9 @@ pub fn run() {
             if initial_launch_path.is_some() {
                 let _ = window.hide();
             }
+            
+            // ── Initialize Native Indexer ──
+            everything::init_indexer();
 
             // ── Background IPC Listener ──
             let app_handle_for_ipc = app_handle.clone();
@@ -770,9 +1015,16 @@ pub fn run() {
                                     let _ = app_handle_for_ipc.emit("show_window", ());
                                 } else if buf.starts_with("LAUNCH:") {
                                     let path = buf.trim_start_matches("LAUNCH:").trim_matches('"').to_string();
-                                    let _ = std::process::Command::new("cmd").args(["/C", "start", "", &path]).spawn().map(|child| {
-                                        job::assign(&child);
-                                    });
+                                    let path_lower = path.to_lowercase();
+                                    if path_lower.ends_with(".exe") || path_lower.ends_with(".bat") || path_lower.ends_with(".cmd") {
+                                        if let Ok(child) = std::process::Command::new(&path).spawn() {
+                                            job::assign(&child);
+                                        }
+                                    } else {
+                                        let _ = std::process::Command::new("cmd").args(["/C", "start", "", &path]).spawn().map(|child| {
+                                            job::assign(&child);
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -784,22 +1036,39 @@ pub fn run() {
             let app_handle_for_logging = app_handle.clone();
             std::thread::spawn(move || {
                 loop {
-                    std::thread::sleep(Duration::from_secs(60));
+                    std::thread::sleep(Duration::from_secs(15));
                     let s = store::load(&app_handle_for_logging);
                     for app in s.apps {
                         let info = process::get_process_info(&app.path);
                         if info.running {
                             let _ = db::log_usage(&app_handle_for_logging, &app.path, info.cpu, info.mem_mb, true);
+                            // Log network connections
+                            if let Some(pid) = info.pid {
+                                let net = network::get_net_stats(pid);
+                                if !net.connections_detail.is_empty() {
+                                    let _ = db::log_network(&app_handle_for_logging, &app.path, &net.connections_detail);
+                                }
+                            }
                         }
                     }
                 }
             });
 
+            // ── Register Global Hotkeys ──
+            keybinds::register_all(&app_handle);
+
             if let Some(path) = initial_launch_path {
                 let path = path.trim_matches('"');
-                let _ = std::process::Command::new("cmd").args(["/C", "start", "", path]).spawn().map(|child| {
-                    job::assign(&child);
-                });
+                let path_lower = path.to_lowercase();
+                if path_lower.ends_with(".exe") || path_lower.ends_with(".bat") || path_lower.ends_with(".cmd") {
+                    if let Ok(child) = std::process::Command::new(path).spawn() {
+                        job::assign(&child);
+                    }
+                } else {
+                    let _ = std::process::Command::new("cmd").args(["/C", "start", "", path]).spawn().map(|child| {
+                        job::assign(&child);
+                    });
+                }
             }
 
             let tray_menu = Menu::new(&app_handle)?;
@@ -810,8 +1079,9 @@ pub fn run() {
             let quit_i = MenuItem::with_id(&app_handle, "quit", "Quit Hubify", true, None::<&str>)?;
             let _ = tray_menu.append(&quit_i);
 
+            let tray_icon = app_icon.clone().unwrap_or_else(|| app.default_window_icon().unwrap().clone());
             let _tray = TrayIconBuilder::with_id("main_tray")
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
                 .menu(&tray_menu)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
@@ -826,9 +1096,7 @@ pub fn run() {
                         app_h.exit(0);
                     } else if event.id.as_ref() != "empty" {
                         let path = event.id.as_ref().to_string();
-                        let _ = std::process::Command::new("cmd").args(["/C", "start", "", &path]).spawn().map(|child| {
-                            job::assign(&child);
-                        });
+                        focus_or_launch_app(path).ok();
                     }
                 })
                 .build(app)?;
@@ -859,6 +1127,7 @@ pub fn run() {
             get_setup_status,
             run_first_setup,
             mark_setup_complete,
+            reset_setup_status,
             create_shortcut,
             toggle_autostart,
             get_startup_items,
@@ -866,6 +1135,23 @@ pub fn run() {
             run_uninstall_string,
             find_leftovers,
             delete_leftover,
+            everything_search,
+            everything_search_apps,
+            is_indexer_ready,
+            focus_or_launch_app,
+            set_active_theme,
+            save_custom_theme,
+            delete_custom_theme,
+            get_daily_activity,
+            get_app_stats,
+            get_today_summary,
+            get_app_daily_detail,
+            get_app_network_activity,
+            get_app_hourly,
+            set_app_hotkey,
+            set_global_hotkey,
+            get_all_processes,
+            kill_process_by_pid,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

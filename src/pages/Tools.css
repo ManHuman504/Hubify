@@ -137,6 +137,39 @@
 }
 .tools-search:focus { border-color: var(--accent); }
 
+/* ── Everything Categories ─────────────────────────────────── */
+.ev-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.ev-cat-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+  font-family: inherit;
+}
+
+.ev-cat-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.ev-cat-btn.active {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .btn-danger-small {
   padding: 5px 12px;
   border-radius: 4px;
@@ -161,3 +194,115 @@
   cursor: pointer;
 }
 .btn-refresh-small:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
+.btn-add-small {
+  padding: 5px 12px;
+  border-radius: 4px;
+  background: var(--accent-subtle);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.btn-add-small:hover { background: var(--accent); color: #fff; }
+
+/* ── Activity Journal ──────────────────────────────────────── */
+
+.journal-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  overflow-y: auto;
+  flex: 1;
+  padding-bottom: 40px;
+}
+
+.journal-day {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.journal-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.journal-day-header:hover {
+  background: var(--bg-elevated);
+}
+
+.journal-day-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.journal-day-date {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.journal-day-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.journal-chevron {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.journal-day-apps {
+  padding: 0 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.journal-app-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.journal-app-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.journal-app-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.journal-app-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+.journal-app-bar-wrap {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.journal-app-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s;
+}

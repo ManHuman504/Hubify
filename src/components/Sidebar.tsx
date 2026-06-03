@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Page } from '../App'
 import type { ReactNode } from 'react'
 import './Sidebar.css'
@@ -34,6 +35,11 @@ const NAV_ITEMS: NavItem[] = [
     label: 'Tray',     
     icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" x2="12" y1="3" y2="15"></line></svg> 
   },
+  { 
+    id: 'analytics',
+    label: 'Analytics',
+    icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="18" y1="20" y2="10"></line><line x1="12" x2="12" y1="20" y2="4"></line><line x1="6" x2="6" y1="20" y2="14"></line></svg>
+  },
 ]
 
 interface Props {
@@ -42,8 +48,14 @@ interface Props {
 }
 
 export default function Sidebar({ active, onNavigate }: Props) {
+  const [collapsed, setCollapsed] = useState(false)
+
   return (
-    <nav className="sidebar">
+    <nav className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
+      <button className="sidebar-toggle" onClick={() => setCollapsed(!collapsed)}>
+        {collapsed ? '▶' : '◀'}
+      </button>
+
       <ul className="nav-list">
         {NAV_ITEMS.map(item => (
           <li key={item.id}>

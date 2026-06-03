@@ -24,6 +24,9 @@
   overflow: hidden;
 }
 
+.page-wrap { display: contents; }
+.page-wrap.hidden { display: none; }
+
 /* ── Loading splash ────────────────────────────────────────────── */
 .app-splash {
   width: 100%;

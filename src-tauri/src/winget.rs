@@ -192,6 +192,10 @@ fn parse_winget_table(text: &str) -> Vec<WingetPackage> {
         if trimmed.is_empty() || trimmed.starts_with('-') {
             continue;
         }
+        // Skip lines with non-ASCII chars (e.g. █▒ progress bars from winget)
+        if !trimmed.is_ascii() {
+            continue;
+        }
 
         let cols = extract_columns(line, &col_positions);
         if cols.len() < 2 {
@@ -219,48 +223,24 @@ fn parse_winget_table(text: &str) -> Vec<WingetPackage> {
 }
 
 fn find_column_positions(header: &str) -> Vec<usize> {
-    // Find start positions of each column by locating runs of non-space then space
-    let bytes = header.as_bytes();
-    let mut positions = vec![0usize];
-    let mut in_word = false;
-    for (i, &b) in bytes.iter().enumerate() {
-        let is_space = b == b' ';
-        if !is_space && !in_word {
-            if i > 0 { positions.push(i); }
-            in_word = true;
-        } else if is_space {
-            in_word = false;
-        }
-    }
-    // Deduplicate and keep only meaningful column starts
-    // Use 2-space gap as column separator heuristic
-    let mut col_starts = vec![0usize];
     let chars: Vec<char> = header.chars().collect();
-    let mut i = 1usize;
-    while i < chars.len() {
-        if chars[i] == ' ' && i + 1 < chars.len() && chars[i + 1] != ' ' {
-            // Check if there are 2+ spaces before this word
-            let prev = if i >= 2 { chars[i - 1] == ' ' || chars[i] == ' ' } else { false };
-            let _ = prev;
-            col_starts.push(i + 1);
-        }
-        i += 1;
-    }
-
-    // Simpler: just find positions where 2+ spaces occur
     let mut starts = vec![0usize];
-    let h = header;
-    let mut j = 0;
-    while j < h.len() {
-        if h[j..].starts_with("  ") {
-            // skip spaces
-            let end = h[j..].find(|c: char| c != ' ').map(|k| j + k).unwrap_or(h.len());
-            if end < h.len() {
+    let n = chars.len();
+    let mut i = 0;
+
+    while i < n {
+        if i + 1 < n && chars[i] == ' ' && chars[i + 1] == ' ' {
+            // Two+ consecutive spaces — skip all spaces
+            let mut end = i;
+            while end < n && chars[end] == ' ' {
+                end += 1;
+            }
+            if end < n {
                 starts.push(end);
             }
-            j = end;
+            i = end;
         } else {
-            j += 1;
+            i += 1;
         }
     }
     starts.dedup();

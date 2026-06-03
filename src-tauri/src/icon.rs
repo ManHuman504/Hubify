@@ -13,7 +13,6 @@ pub fn extract_icon(exe_path: &str) -> Option<String> {
     use base64::Engine;
 
     unsafe {
-        // Step 1: get system icon index
         let wide: Vec<u16> = exe_path.encode_utf16().chain(std::iter::once(0)).collect();
         let mut shfi = SHFILEINFOW::default();
         let ok = SHGetFileInfoW(
@@ -26,9 +25,8 @@ pub fn extract_icon(exe_path: &str) -> Option<String> {
         if ok == 0 { return None; }
         let idx = shfi.iIcon;
 
-        // Step 2: get jumbo (256x256) image list
         let iml: IImageList = SHGetImageList(SHIL_JUMBO as i32).ok()?;
-        let hicon = iml.GetIcon(idx, 0x00000001).ok()?; // ILD_TRANSPARENT
+        let hicon = iml.GetIcon(idx, 0x00000001).ok()?;
 
         let mut icon_info = ICONINFO::default();
         if GetIconInfo(hicon, &mut icon_info).is_err() {
@@ -58,7 +56,6 @@ pub fn extract_icon(exe_path: &str) -> Option<String> {
             Some(pixels.as_mut_ptr() as *mut _), &mut bmi, DIB_RGB_COLORS);
         SelectObject(hdc, old);
 
-        // BGRA → RGBA
         for chunk in pixels.chunks_exact_mut(4) {
             chunk.swap(0, 2);
         }
@@ -78,3 +75,4 @@ pub fn extract_icon(exe_path: &str) -> Option<String> {
 
 #[cfg(not(target_os = "windows"))]
 pub fn extract_icon(_exe_path: &str) -> Option<String> { None }
+

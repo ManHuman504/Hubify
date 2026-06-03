@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useApps } from '../hooks/useApps'
 import type { App, Group } from '../hooks/useApps'
 import AppCard from '../components/AppCard'
@@ -10,8 +11,6 @@ import './Page.css'
 import './Home.css'
 
 type FilterId = 'all' | string
-type LayoutType = 'grid' | 'rect' | 'list'
-type SizeType = 'small' | 'medium' | 'large'
 
 export default function Home() {
   const {
@@ -31,20 +30,38 @@ export default function Home() {
   const [showGroupInput, setShowGroupInput] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
   
-  // Layout Options
-  const [layout, setLayout] = useState<LayoutType>(() => (localStorage.getItem('hubify_layout') as LayoutType) || 'grid')
-  const [size, setSize] = useState<SizeType>(() => (localStorage.getItem('hubify_size') as SizeType) || 'medium')
+  // Everything Search Integration
+  const [evApps, setEvApps] = useState<any[]>([])
+  const [evLoading, setEvLoading] = useState(false)
+  const [evReady, setEvReady] = useState(true)
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   useGlobalSearchFocus(searchInputRef as React.RefObject<HTMLInputElement>)
 
   useEffect(() => {
-    localStorage.setItem('hubify_layout', layout)
-  }, [layout])
-
-  useEffect(() => {
-    localStorage.setItem('hubify_size', size)
-  }, [size])
+    if (search.trim().length >= 2) {
+      setEvLoading(true)
+      const timer = setTimeout(async () => {
+        try {
+          const ready = await invoke<boolean>('is_indexer_ready')
+          setEvReady(ready)
+          
+          const results = await invoke<any[]>('everything_search_apps', { query: search, limit: 3 })
+          const filtered = results.filter(res => !apps.some(a => a.path.toLowerCase() === res.path.toLowerCase()))
+          setEvApps(filtered)
+        } catch (e) {
+          console.error('Everything search failed', e)
+          setEvApps([])
+        } finally {
+          setEvLoading(false)
+        }
+      }, 300)
+      return () => clearTimeout(timer)
+    } else {
+      setEvApps([])
+      setEvLoading(false)
+    }
+  }, [search, apps])
 
   if (selected) {
     return (
@@ -112,19 +129,6 @@ export default function Home() {
           </div>
           
           <div className="home-header-actions">
-             {/* Layout Controls */}
-             <div className="layout-controls">
-                <div className="layout-group">
-                   <button className={`layout-btn ${layout === 'grid' ? 'active' : ''}`} onClick={() => setLayout('grid')} title="Grid">⊞</button>
-                   <button className={`layout-btn ${layout === 'rect' ? 'active' : ''}`} onClick={() => setLayout('rect')} title="Cards">⊟</button>
-                   <button className={`layout-btn ${layout === 'list' ? 'active' : ''}`} onClick={() => setLayout('list')} title="List">☰</button>
-                </div>
-                <div className="layout-group">
-                   <button className={`layout-btn ${size === 'small' ? 'active' : ''}`} onClick={() => setSize('small')} title="Small">S</button>
-                   <button className={`layout-btn ${size === 'medium' ? 'active' : ''}`} onClick={() => setSize('medium')} title="Medium">M</button>
-                   <button className={`layout-btn ${size === 'large' ? 'active' : ''}`} onClick={() => setSize('large')} title="Large">L</button>
-                </div>
-             </div>
             <button className="btn-primary" onClick={() => setShowDialog(true)}>+ Add</button>
           </div>
         </div>
@@ -226,33 +230,70 @@ export default function Home() {
           <p>No apps yet</p>
           <p className="empty-hint">Click "+ Add" to get started</p>
         </div>
-      ) : visibleApps.length === 0 ? (
+      ) : visibleApps.length === 0 && evApps.length === 0 ? (
         <div className="page-empty">
           <span className="empty-icon">⊡</span>
           <p>{search ? 'Nothing found' : 'No apps in this group'}</p>
           <p className="empty-hint">{search ? 'Try a different query' : 'Drag apps here or use "+ Add"'}</p>
         </div>
       ) : (
-        <div className={`apps-view layout-${layout} size-${size} ${layout === 'grid' ? 'hub-grid' : ''}`}>
-          {visibleApps.map(app => (
-            <div
-              key={app.id}
-              draggable
-              onDragStart={e => handleDragStart(e, app.id)}
-              onDragEnd={handleDragEnd}
-              className={`app-card-drag-wrap ${draggingId === app.id ? 'dragging' : ''} ${layout !== 'list' ? 'hub-card-base' : ''}`}
-            >
-              <AppCard
-                app={app}
-                info={processInfo[app.id]}
-                onSelect={() => setSelected(app)}
-                onLaunch={() => launchApp(app.path)}
-                onKill={() => killApp(app.path)}
-                onRemove={() => removeApp(app.id)}
-              />
+        <>
+          <div className="apps-view hub-grid">
+            {visibleApps.map(app => (
+              <div
+                key={app.id}
+                draggable
+                onDragStart={e => handleDragStart(e, app.id)}
+                onDragEnd={handleDragEnd}
+                className={`app-card-drag-wrap ${draggingId === app.id ? 'dragging' : ''} hub-card-base`}
+              >
+                <AppCard
+                  app={app}
+                  info={processInfo[app.id]}
+                  onSelect={() => setSelected(app)}
+                  onLaunch={() => launchApp(app.path)}
+                  onKill={() => killApp(app.path)}
+                  onRemove={() => removeApp(app.id)}
+                />
+              </div>
+            ))}
+          </div>
+
+          {search.trim().length >= 2 && (evApps.length > 0 || evLoading || !evReady) && (
+            <div className="pc-search-results">
+              <div className="pc-search-divider">
+                <span className="pc-search-divider-line"></span>
+                <span className="pc-search-divider-text">
+                  {!evReady ? 'reEverything is building index...' : evLoading ? 'reEverything is searching...' : 'Results from PC (reEverything)'}
+                </span>
+                <span className="pc-search-divider-line"></span>
+              </div>
+              {evApps.length > 0 && (
+                <div className="apps-view hub-grid">
+                  {evApps.map((evApp, i) => (
+                    <div key={i} className="app-card-drag-wrap hub-card-base ev-app-card">
+                      <AppCard
+                        app={{
+                          id: `ev-${i}`,
+                          name: evApp.name,
+                          path: evApp.path,
+                          icon: null,
+                          group_id: null,
+                          hotkey: null
+                        }}
+                        onSelect={() => {}}
+                        onLaunch={() => launchApp(evApp.path)}
+                        onKill={() => {}}
+                        onRemove={() => {}}
+                        isExternal={true}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
 
       {showDialog && (

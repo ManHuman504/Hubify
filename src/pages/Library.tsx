@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useApps } from '../hooks/useApps'
 import type { DetectedApp, Group } from '../hooks/useApps'
@@ -73,8 +73,39 @@ export default function Library() {
   const [search, setSearch] = useState('')
   const [picking, setPicking] = useState<DetectedApp | null>(null)
 
+  // Everything Search Integration
+  const [evApps, setEvApps] = useState<any[]>([])
+  const [evLoading, setEvLoading] = useState(false)
+  const [evReady, setEvReady] = useState(true)
+
   const searchInputRef = useRef<HTMLInputElement>(null)
   useGlobalSearchFocus(searchInputRef as React.RefObject<HTMLInputElement>)
+
+  useEffect(() => {
+    if (search.trim().length >= 2) {
+      setEvLoading(true)
+      const timer = setTimeout(async () => {
+        try {
+          const ready = await invoke<boolean>('is_indexer_ready')
+          setEvReady(ready)
+
+          const results = await invoke<any[]>('everything_search_apps', { query: search, limit: 3 })
+          // Filter out apps already in scannedApps to avoid duplicates
+          const filtered = results.filter(res => !scannedApps.some(a => a.path.toLowerCase() === res.path.toLowerCase()))
+          setEvApps(filtered)
+        } catch (e) {
+          console.error('Everything search failed', e)
+          setEvApps([])
+        } finally {
+          setEvLoading(false)
+        }
+      }, 300)
+      return () => clearTimeout(timer)
+    } else {
+      setEvApps([])
+      setEvLoading(false)
+    }
+  }, [search, scannedApps])
 
   const scan = useCallback(async () => {
     setLoading(true)
@@ -169,33 +200,79 @@ export default function Library() {
       )}
 
       {/* Grid */}
-      {!loading && filtered.length > 0 && (
-        <div className="lib-grid hub-grid">
-          {filtered.map(det => {
-            const key = det.path.toLowerCase()
-            const isAdded = addedPaths.has(key)
+      {!loading && scannedApps.length > 0 && (
+        <>
+          {(filtered.length === 0 && evApps.length === 0) ? (
+            <div className="page-empty">
+              <span className="empty-icon">⊡</span>
+              <p>Nothing found</p>
+              <p className="empty-hint">Try a different query</p>
+            </div>
+          ) : (
+            <>
+              {filtered.length > 0 && (
+                <div className="lib-grid hub-grid">
+                  {filtered.map(det => {
+                    const key = det.path.toLowerCase()
+                    const isAdded = addedPaths.has(key)
 
-            return (
-              <div
-                key={det.path}
-                className={`lib-card hub-card-base ${isAdded ? 'lib-card-added' : ''}`}
-                onClick={() => !isAdded && setPicking(det)}
-                title={isAdded ? 'Already in your hub' : `Click to add ${det.name}`}
-              >
-                <div className="lib-card-icon">
-                  {det.icon
-                    ? <img src={det.icon} alt={det.name} draggable={false} />
-                    : <span className="lib-card-fallback">{det.name[0]}</span>
-                  }
+                    return (
+                      <div
+                        key={det.path}
+                        className={`lib-card hub-card-base ${isAdded ? 'lib-card-added' : ''}`}
+                        onClick={() => !isAdded && setPicking(det)}
+                        title={isAdded ? 'Already in your hub' : `Click to add ${det.name}`}
+                      >
+                        <div className="lib-card-icon">
+                          {det.icon
+                            ? <img src={det.icon} alt={det.name} draggable={false} />
+                            : <span className="lib-card-fallback">{det.name[0]}</span>
+                          }
+                        </div>
+                        <div className="lib-card-overlay">
+                          <p className="lib-card-name">{det.name}</p>
+                          {isAdded && <span className="lib-card-added-badge">✓</span>}
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
-                <div className="lib-card-overlay">
-                  <p className="lib-card-name">{det.name}</p>
-                  {isAdded && <span className="lib-card-added-badge">✓</span>}
+              )}
+
+              {search.trim().length >= 2 && (evApps.length > 0 || evLoading || !evReady) && (
+                <div className="pc-search-results" style={{ padding: '0 20px' }}>
+                  <div className="pc-search-divider">
+                    <span className="pc-search-divider-line"></span>
+                    <span className="pc-search-divider-text">
+                      {!evReady ? 'reEverything is building index...' : evLoading ? 'reEverything is searching...' : 'Results from PC (reEverything)'}
+                    </span>
+                    <span className="pc-search-divider-line"></span>
+                  </div>
+                  {evApps.length > 0 && (
+                    <div className="lib-grid hub-grid">
+                      {evApps.map((evApp, i) => (
+                        <div
+                          key={i}
+                          className="lib-card hub-card-base ev-app-card"
+                          onClick={() => setPicking({ name: evApp.name, path: evApp.path, icon: null })}
+                          title={`Click to add ${evApp.name}`}
+                        >
+                          <div className="lib-card-icon">
+                            <span className="lib-card-fallback">{evApp.name[0]}</span>
+                          </div>
+                          <div className="external-badge">PC</div>
+                          <div className="lib-card-overlay">
+                            <p className="lib-card-name">{evApp.name}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
-            )
-          })}
-        </div>
+              )}
+            </>
+          )}
+        </>
       )}
 
       {/* Group picker modal */}

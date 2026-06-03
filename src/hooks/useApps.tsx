@@ -7,6 +7,7 @@ export interface App {
   path: string
   icon: string | null
   group_id: string | null
+  hotkey: string | null
 }
 
 export interface Group {
@@ -19,6 +20,7 @@ export interface StoreData {
   apps: App[]
   groups: Group[]
   scanned_apps: DetectedApp[]
+  theme: ThemeConfig
 }
 
 export interface ProcessInfo {
@@ -34,11 +36,23 @@ export interface DetectedApp {
   icon: string | null
 }
 
+export interface CustomTheme {
+  id: string
+  name: string
+  vars: Record<string, string>
+}
+
+export interface ThemeConfig {
+  active: string
+  custom_themes: CustomTheme[]
+}
+
 interface AppsContextType {
   apps: App[]
   groups: Group[]
   scannedApps: DetectedApp[]
   processInfo: Record<string, ProcessInfo>
+  theme: ThemeConfig
   addApp: (path: string, name?: string, groupId?: string | null) => Promise<void>
   removeApp: (id: string) => Promise<void>
   launchApp: (path: string) => Promise<void>
@@ -48,6 +62,10 @@ interface AppsContextType {
   removeGroup: (id: string) => Promise<void>
   renameGroup: (id: string, name: string) => Promise<void>
   refresh: () => Promise<void>
+  setTheme: (themeId: string) => Promise<void>
+  saveTheme: (theme: CustomTheme) => Promise<void>
+  deleteTheme: (themeId: string) => Promise<void>
+  setAppHotkey: (appId: string, hotkey: string | null) => Promise<void>
 }
 
 const AppsContext = createContext<AppsContextType | null>(null)
@@ -56,6 +74,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
   const [apps, setApps] = useState<App[]>([])
   const [groups, setGroups] = useState<Group[]>([])
   const [scannedApps, setScannedApps] = useState<DetectedApp[]>([])
+  const [theme, setThemeState] = useState<ThemeConfig>({ active: 'dark', custom_themes: [] })
   const [processInfo, setProcessInfo] = useState<Record<string, ProcessInfo>>({})
   const appsRef = useRef<App[]>([])
   appsRef.current = apps
@@ -65,6 +84,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     setApps(data.apps)
     setGroups(data.groups)
     setScannedApps(data.scanned_apps || [])
+    if (data.theme) setThemeState(data.theme)
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
@@ -85,6 +105,8 @@ export function AppsProvider({ children }: { children: ReactNode }) {
 
   // Poll process status every 1s
   useEffect(() => {
+    let lastActiveJson = ''
+
     const poll = async () => {
       const current = appsRef.current
       if (!current.length) return
@@ -102,12 +124,16 @@ export function AppsProvider({ children }: { children: ReactNode }) {
         
         setProcessInfo(newProcessInfo)
 
-        // Update native tray context menu
         const activeApps = current
           .filter(a => newProcessInfo[a.id]?.running)
           .map(a => ({ name: a.name, path: a.path }))
-        
-        invoke('update_tray_menu', { activeApps }).catch(() => {})
+
+        // Only rebuild tray menu when active apps actually change
+        const json = JSON.stringify(activeApps)
+        if (json !== lastActiveJson) {
+          lastActiveJson = json
+          invoke('update_tray_menu', { activeApps }).catch(() => {})
+        }
       } catch (e) {
          console.error('Failed to poll process info', e)
       }
@@ -161,12 +187,41 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     setGroups(prev => prev.map(g => g.id === id ? { ...g, name } : g))
   }, [])
 
+  const setTheme = useCallback(async (themeId: string) => {
+    await invoke('set_active_theme', { themeId })
+    setThemeState(prev => ({ ...prev, active: themeId }))
+  }, [])
+
+  const saveTheme = useCallback(async (t: CustomTheme) => {
+    await invoke('save_custom_theme', { theme: t })
+    setThemeState(prev => {
+      const themes = prev.custom_themes.filter(th => th.id !== t.id)
+      themes.push(t)
+      return { ...prev, custom_themes: themes }
+    })
+  }, [])
+
+  const deleteTheme = useCallback(async (themeId: string) => {
+    await invoke('delete_custom_theme', { themeId })
+    setThemeState(prev => ({
+      ...prev,
+      custom_themes: prev.custom_themes.filter(t => t.id !== themeId),
+      active: prev.active === themeId ? 'dark' : prev.active,
+    }))
+  }, [])
+
+  const setAppHotkey = useCallback(async (appId: string, hotkey: string | null) => {
+    await invoke('set_app_hotkey', { appId, hotkey })
+    setApps(prev => prev.map(a => a.id === appId ? { ...a, hotkey } : a))
+  }, [])
+
   return (
     <AppsContext.Provider value={{
       apps,
       groups,
       scannedApps,
       processInfo,
+      theme,
       addApp,
       removeApp,
       launchApp,
@@ -176,6 +231,10 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       removeGroup,
       renameGroup,
       refresh,
+      setTheme,
+      saveTheme,
+      deleteTheme,
+      setAppHotkey,
     }}>
       {children}
     </AppsContext.Provider>

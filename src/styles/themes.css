@@ -27,13 +27,13 @@
 }
 
 [data-theme="light"] {
-  --bg-base:     rgba(245, 245, 248, 0.0);
-  --bg-surface:  rgba(255, 255, 255, 0.55);
-  --bg-elevated: rgba(252, 252, 255, 0.65);
+  --bg-base:     #f5f5f8;
+  --bg-surface:  #ffffff;
+  --bg-elevated: #fcfcff;
   --bg-hover:    rgba(0, 0, 0, 0.04);
 
-  --border:        rgba(0, 0, 0, 0.07);
-  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border:        rgba(0, 0, 0, 0.1);
+  --border-subtle: rgba(0, 0, 0, 0.05);
 
   --text-primary:   rgba(20, 20, 26, 0.95);
   --text-secondary: rgba(80, 80, 96, 0.85);

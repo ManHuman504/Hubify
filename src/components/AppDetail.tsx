@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import type { App } from '../hooks/useApps'
+import { useApps } from '../hooks/useApps'
 import './AppDetail.css'
 
 interface ConnectionInfo {
@@ -35,6 +36,8 @@ export default function AppDetail({ app, onBack, onLaunch, onKill, onRemove }: P
   const [history, setHistory] = useState<{ cpu: number; mem: number }[]>([])
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  const { removeApp, refresh } = useApps()
+
   const [uninstalling, setUninstalling] = useState(false)
   const [leftovers, setLeftovers] = useState<any[]>([])
   const [showCleanup, setShowCleanup] = useState(false)
@@ -49,7 +52,6 @@ export default function AppDetail({ app, onBack, onLaunch, onKill, onRemove }: P
     }
   }
 
-  // Poll immediately on mount so we don't have to wait for the first interval tick
   useEffect(() => {
     poll()
     intervalRef.current = setInterval(poll, 500)
@@ -84,28 +86,38 @@ export default function AppDetail({ app, onBack, onLaunch, onKill, onRemove }: P
     
     setUninstalling(true)
     try {
-      // 0. Kill the process if it's running
       if (metrics?.running) {
         await invoke('kill_app', { path: app.path })
       }
 
-      // 1. Get uninstall string from registry (targeted search using app name as hint)
-      const list = await invoke<any[]>('list_uninstallable_apps', { hints: [app.name] })
-      const target = list.find(a => a.name.toLowerCase().includes(app.name.toLowerCase()) || app.path.toLowerCase().includes(a.install_location?.toLowerCase()))
-      
-      if (!target) {
-        alert("Could not find official uninstall information for this app in Registry.")
-        setUninstalling(false)
+      // Find in registry (full list like Deep Uninstaller in Tools)
+      const allApps = await invoke<any[]>('list_uninstallable_apps', { hints: null })
+      const target = allApps.find(a =>
+        a.name.toLowerCase().includes(app.name.toLowerCase()) ||
+        (a.install_location && app.path.toLowerCase().includes(a.install_location.toLowerCase()))
+      )
+
+      if (target) {
+        // Run official uninstaller
+        try {
+          await invoke('run_uninstall_string', { command: target.uninstall_string })
+        } catch (e) {
+          console.warn('Uninstaller process error:', e)
+        }
+        await new Promise(r => setTimeout(r, 4000))
+
+        // Scan for leftovers
+        const found = await invoke<any[]>('find_leftovers', { name: app.name, publisher: target.publisher })
+        setLeftovers(found)
+        setShowCleanup(true) // modal is shown — function returns, user interacts with modal
         return
       }
 
-      // 2. Run official uninstaller
-      await invoke('run_uninstall_string', { command: target.uninstall_string })
-      
-      // 3. Scan for leftovers
-      const found = await invoke<any[]>('find_leftovers', { name: app.name, publisher: target.publisher })
-      setLeftovers(found)
-      setShowCleanup(true)
+      // No registry entry — just remove from hub and navigate back
+      console.warn('No registry entry found — removing from hub only')
+      await removeApp(app.id)
+      await refresh()
+      onBack()
     } catch (e) {
       alert(`Uninstall failed: ${e}`)
     } finally {
@@ -113,13 +125,19 @@ export default function AppDetail({ app, onBack, onLaunch, onKill, onRemove }: P
     }
   }
 
+  const finishUninstall = async () => {
+    setShowCleanup(false)
+    await removeApp(app.id)
+    await refresh()
+    onBack()
+  }
+
   const handleCleanLeftovers = async () => {
     for (const item of leftovers) {
       try { await invoke('delete_leftover', { leftover: item }) } catch (e) { console.error(e) }
     }
     alert('Deep cleaning complete!')
-    setShowCleanup(false)
-    onRemove() // Remove from hub after uninstall
+    await finishUninstall()
   }
 
   return (
@@ -127,31 +145,33 @@ export default function AppDetail({ app, onBack, onLaunch, onKill, onRemove }: P
       {/* Cleanup Modal */}
       {showCleanup && (
         <div className="lib-picker-backdrop">
-           <div className="lib-picker uninstaller-modal" style={{ width: 500 }}>
-              <h3 style={{ fontSize: 16, marginBottom: 8 }}>Deep Clean Leftovers</h3>
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-                The uninstaller finished. Hubify found {leftovers.length} residual items.
+           <div className="lib-picker" style={{ width: 440, padding: 20 }}>
+              <h3 style={{ fontSize: 15, marginBottom: 8 }}>Deep Clean Leftovers</h3>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 14 }}>
+                The uninstaller finished. Found {leftovers.length} residual items.
               </p>
               
-              <div className="leftover-list" style={{ width: '100%', maxHeight: 300, overflowY: 'auto', background: 'var(--bg-surface)', borderRadius: 8, padding: 12, border: '1px solid var(--border)', marginBottom: 20 }}>
-                 {leftovers.length === 0 ? <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No leftovers found. Your system is clean!</p> : (
-                    leftovers.map((l, i) => (
-                      <div key={i} style={{ display: 'flex', gap: 10, fontSize: 11, marginBottom: 6, paddingBottom: 6, borderBottom: '1px solid var(--border-subtle)' }}>
-                         <span style={{ color: l.kind === 'folder' ? '#febc2e' : '#accent', fontWeight: 'bold' }}>[{l.kind[0].toUpperCase()}]</span>
-                         <span style={{ color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{l.path}</span>
-                      </div>
-                    ))
+              <div style={{ width: '100%', maxHeight: 250, overflowY: 'auto', background: 'var(--bg-surface)', borderRadius: 6, padding: 10, border: '1px solid var(--border)', marginBottom: 16, fontSize: 11 }}>
+                 {leftovers.length === 0 ? (
+                   <p style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No leftovers found.</p>
+                 ) : (
+                   leftovers.map((l, i) => (
+                     <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 4, paddingBottom: 4, borderBottom: '1px solid var(--border-subtle)' }}>
+                        <span style={{ color: l.kind === 'folder' ? '#febc2e' : 'var(--accent)', fontWeight: 'bold' }}>[{l.kind[0].toUpperCase()}]</span>
+                        <span style={{ color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{l.path}</span>
+                     </div>
+                   ))
                  )}
               </div>
 
-              <div className="lib-picker-footer">
-                 <button className="btn-secondary" onClick={() => { setShowCleanup(false); onRemove(); }}>Skip</button>
-                 {leftovers.length > 0 && (
-                    <button className="btn-danger" onClick={handleCleanLeftovers}>Clean Everything</button>
-                 )}
-                 {leftovers.length === 0 && (
-                    <button className="btn-add" onClick={() => { setShowCleanup(false); onRemove(); }}>Finish</button>
-                 )}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="detail-btn" onClick={finishUninstall}>Skip → Home</button>
+                  {leftovers.length > 0 && (
+                    <button className="detail-btn danger" onClick={handleCleanLeftovers}>Clean Everything</button>
+                  )}
+                  {leftovers.length === 0 && (
+                    <button className="detail-btn primary" onClick={finishUninstall}>Finish → Home</button>
+                  )}
               </div>
            </div>
         </div>
@@ -159,14 +179,15 @@ export default function AppDetail({ app, onBack, onLaunch, onKill, onRemove }: P
 
       {/* Top bar */}
       <div className="detail-topbar">
-        <button className="detail-back" onClick={onBack}>← Back</button>
-        <div className="detail-status">
-          {metrics && (
-            <span className={`detail-status-badge ${metrics.running ? 'running' : 'stopped'}`}>
-              {metrics.running ? '● Running' : '○ Stopped'}
-            </span>
-          )}
-        </div>
+        <button className="detail-back" onClick={onBack}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          Back
+        </button>
+        {metrics && (
+          <span className={`detail-status-badge ${metrics.running ? 'running' : 'stopped'}`}>
+            {metrics.running ? '● Running' : '○ Stopped'}
+          </span>
+        )}
       </div>
 
       {/* Hero */}
@@ -182,43 +203,61 @@ export default function AppDetail({ app, onBack, onLaunch, onKill, onRemove }: P
           <p className="detail-path">{app.path}</p>
           <div className="detail-actions">
             {metrics?.running
-              ? <button className="btn-kill" onClick={onKill}>⬛ Kill Process</button>
-              : <button className="btn-launch" onClick={onLaunch}>▶ Launch App</button>
+              ? <button className="detail-btn danger" onClick={onKill}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+                  Kill
+                </button>
+              : <button className="detail-btn primary" onClick={onLaunch}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  Launch
+                </button>
             }
-            <button className="btn-shortcut" onClick={handleCreateShortcut} title="Create Desktop Shortcut">➦ Shortcut</button>
+            <button className="detail-btn" onClick={handleCreateShortcut}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              Shortcut
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Metric cards */}
+      {/* Metrics */}
       {metrics && (
         <div className="detail-metrics">
-          <MetricCard
-            label="PID"
-            value={metrics.pid ? `${metrics.pid}` : '—'}
-            running={metrics.running}
-          />
-          <MetricCard
-            label="TCP"
-            value={`${metrics.connections}`}
-            sub="connections"
-            running={metrics.running}
-          />
+          <div className="metric-chip">
+            <span className="metric-chip-label">PID</span>
+            <span className="metric-chip-value">{metrics.pid ?? '—'}</span>
+          </div>
+          <div className="metric-chip">
+            <span className="metric-chip-label">TCP</span>
+            <span className="metric-chip-value">{metrics.connections}</span>
+          </div>
+          {metrics.running && (
+            <>
+              <div className="metric-chip">
+                <span className="metric-chip-label">↓</span>
+                <span className="metric-chip-value">{metrics.recv_kb.toFixed(0)} KB</span>
+              </div>
+              <div className="metric-chip">
+                <span className="metric-chip-label">↑</span>
+                <span className="metric-chip-value">{metrics.sent_kb.toFixed(0)} KB</span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* CPU + RAM charts */}
+      {/* Charts */}
       {(metrics?.running && history.length > 0) && (
         <div className="detail-charts">
           <MiniChart
-            label="CPU Usage"
+            label="CPU"
             points={history.map(h => h.cpu)}
             max={maxCpu}
             color="var(--accent)"
             unit="%"
           />
           <MiniChart
-            label="Memory Usage"
+            label="Memory"
             points={history.map(h => h.mem)}
             max={maxMem}
             color="#28c840"
@@ -227,80 +266,70 @@ export default function AppDetail({ app, onBack, onLaunch, onKill, onRemove }: P
         </div>
       )}
 
-      {/* Settings & Dangerous Area */}
-      <div className="detail-settings-area">
-         <h3 className="section-title">App Settings</h3>
-         <div className="settings-panel">
-            <div className="settings-panel-row">
-               <div className="settings-panel-info">
-                  <p className="settings-panel-label">Start with Windows</p>
-                  <p className="settings-panel-desc">Launch this app automatically when you log in.</p>
+      {/* Settings */}
+      <div className="detail-settings">
+         <div>
+           <p className="settings-section-title">App Settings</p>
+           <div className="settings-card">
+             <div className="settings-row">
+               <div className="settings-row-info">
+                 <p className="settings-row-label">Start with Windows</p>
+                 <p className="settings-row-desc">Launch automatically on login.</p>
                </div>
                <button 
-                  className={`toggle-btn ${metrics?.is_autostart ? 'active' : ''}`}
-                  onClick={handleToggleAutostart}
+                 className={`toggle-btn ${metrics?.is_autostart ? 'active' : ''}`}
+                 onClick={handleToggleAutostart}
                >
-                  <div className="toggle-thumb" />
+                 <div className="toggle-thumb" />
                </button>
-            </div>
+             </div>
+           </div>
          </div>
 
-         <h3 className="section-title danger">Dangerous Area</h3>
-         <div className="settings-panel danger">
-            <div className="settings-panel-row">
-               <div className="settings-panel-info">
-                  <p className="settings-panel-label">Remove from Hub</p>
-                  <p className="settings-panel-desc">Keep the app installed, but hide it from Hubify.</p>
+         <div>
+           <p className="settings-section-title danger">Dangerous Area</p>
+           <div className="settings-card danger">
+             <div className="settings-row">
+               <div className="settings-row-info">
+                 <p className="settings-row-label">Remove from Hub</p>
+                 <p className="settings-row-desc">Keep installed, hide from Hubify.</p>
                </div>
-               <button className="btn-secondary" onClick={onRemove}>Remove</button>
-            </div>
-            <div className="settings-panel-row">
-               <div className="settings-panel-info">
-                  <p className="settings-panel-label">Uninstall Completely</p>
-                  <p className="settings-panel-desc">Run uninstaller and perform a deep clean of residual files.</p>
+               <button className="detail-btn" onClick={onRemove}>Remove</button>
+             </div>
+             <div className="settings-row">
+               <div className="settings-row-info">
+                 <p className="settings-row-label">Uninstall Completely</p>
+                 <p className="settings-row-desc">Run uninstaller and remove residuals.</p>
                </div>
                <button 
-                  className="btn-danger" 
-                  onClick={handleDeepUninstall}
-                  disabled={uninstalling}
+                 className="detail-btn danger" 
+                 onClick={handleDeepUninstall}
+                 disabled={uninstalling}
                >
-                  {uninstalling ? 'Running…' : 'Uninstall'}
+                 {uninstalling ? 'Running…' : 'Uninstall'}
                </button>
-            </div>
+             </div>
+           </div>
          </div>
       </div>
     </div>
   )
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────
-
-function MetricCard({
-  label, value, sub, accent, running,
-}: {
-  label: string; value: string; sub?: string; accent?: boolean; running: boolean
-}) {
-  return (
-    <div className={`metric-card ${running ? '' : 'inactive'} ${accent ? 'accent' : ''}`}>
-      <p className="metric-label">{label}</p>
-      <p className="metric-value">{value}</p>
-      {sub && <p className="metric-sub">{sub}</p>}
-    </div>
-  )
-}
+// ── Mini Chart ────────────────────────────────────────────────────────────────
 
 function MiniChart({ label, points, max, color, unit }: {
   label: string; points: number[]; max: number; color: string; unit: string
 }) {
   const w = 300
-  const h = 56
+  const h = 40
   const n = points.length
 
   if (n < 2) return null
 
   const pts = points.map((v, i) => {
     const x = (i / (n - 1)) * w
-    const y = h - Math.max(0, (v / max) * h * 0.95)
+    const y = h - Math.max(0, (v / max) * h * 0.9)
     return `${x.toFixed(1)},${y.toFixed(1)}`
   }).join(' ')
 
@@ -315,8 +344,8 @@ function MiniChart({ label, points, max, color, unit }: {
       <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
         <defs>
           <linearGradient id={`grad-${label}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.18" />
-            <stop offset="100%" stopColor={color} stopOpacity="0.01" />
+            <stop offset="0%" stopColor={color} stopOpacity="0.15" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
           </linearGradient>
         </defs>
         <polyline

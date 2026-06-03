@@ -11,6 +11,8 @@ pub struct App {
     pub icon: Option<String>, // base64 PNG
     #[serde(default)]
     pub group_id: Option<String>,
+    #[serde(default)]
+    pub hotkey: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,11 +31,39 @@ pub struct DetectedApp {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomTheme {
+    pub id: String,
+    pub name: String,
+    /// CSS custom property overrides, e.g. {"--accent": "#ff6600", "--bg-surface": "rgba(...)"}
+    pub vars: std::collections::HashMap<String, String>,
+}
+
+/// Active theme configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThemeConfig {
+    /// "dark", "light", or a custom theme id
+    pub active: String,
+    #[serde(default)]
+    pub custom_themes: Vec<CustomTheme>,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            active: "dark".to_string(),
+            custom_themes: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Store {
     pub apps: Vec<App>,
     pub groups: Vec<Group>,
     #[serde(default)]
     pub scanned_apps: Vec<DetectedApp>,
+    #[serde(default)]
+    pub theme: ThemeConfig,
 }
 
 fn store_path(app_handle: &tauri::AppHandle) -> PathBuf {
@@ -47,7 +77,7 @@ fn store_path(app_handle: &tauri::AppHandle) -> PathBuf {
 pub fn load(app_handle: &tauri::AppHandle) -> Store {
     let path = store_path(app_handle);
     if !path.exists() {
-        return Store { apps: vec![], groups: vec![], scanned_apps: vec![] };
+        return Store { apps: vec![], groups: vec![], scanned_apps: vec![], theme: ThemeConfig::default() };
     }
     let data = fs::read_to_string(&path).unwrap_or_default();
     
@@ -60,15 +90,15 @@ pub fn load(app_handle: &tauri::AppHandle) -> Store {
     #[derive(Deserialize)]
     struct LegacyStoreV1 { apps: Vec<App>, groups: Vec<Group> }
     if let Ok(legacy) = serde_json::from_str::<LegacyStoreV1>(&data) {
-        return Store { apps: legacy.apps, groups: legacy.groups, scanned_apps: vec![] };
+        return Store { apps: legacy.apps, groups: legacy.groups, scanned_apps: vec![], theme: ThemeConfig::default() };
     }
 
     // Legacy: plain array of apps
     if let Ok(apps) = serde_json::from_str::<Vec<App>>(&data) {
-        return Store { apps, groups: vec![], scanned_apps: vec![] };
+        return Store { apps, groups: vec![], scanned_apps: vec![], theme: ThemeConfig::default() };
     }
 
-    Store { apps: vec![], groups: vec![], scanned_apps: vec![] }
+    Store { apps: vec![], groups: vec![], scanned_apps: vec![], theme: ThemeConfig::default() }
 }
 
 pub fn save(app_handle: &tauri::AppHandle, store: &Store) {

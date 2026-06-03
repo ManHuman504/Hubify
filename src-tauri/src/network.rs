@@ -50,7 +50,6 @@ pub fn get_net_stats(pid: u32) -> NetStats {
             connections = proc_rows.len() as u32;
 
             for row in proc_rows {
-                // dwRemoteAddr is network byte order u32 → IPv4
                 let ra = row.dwRemoteAddr.to_be();
                 let remote_ip = format!(
                     "{}.{}.{}.{}",
@@ -63,7 +62,6 @@ pub fn get_net_stats(pid: u32) -> NetStats {
                 let local_port = ((row.dwLocalPort.to_be()) >> 16) as u16;
                 let remote_port = ((row.dwRemotePort.to_be()) >> 16) as u16;
 
-                // TCP state mapping (MIB_TCP_STATE values)
                 let state = match row.dwState {
                     1  => "CLOSED",
                     2  => "LISTEN",
@@ -80,7 +78,6 @@ pub fn get_net_stats(pid: u32) -> NetStats {
                     _  => "UNKNOWN",
                 };
 
-                // Skip loopback and 0.0.0.0 remote
                 let _ = la;
                 if remote_ip == "0.0.0.0" { continue; }
 
@@ -99,6 +96,37 @@ pub fn get_net_stats(pid: u32) -> NetStats {
     let (recv_kb, sent_kb) = get_net_bytes();
     NetStats { connections, recv_kb, sent_kb, connections_detail }
 }
+
+/// Count connections for a PID without allocating detail structs (faster)
+#[cfg(target_os = "windows")]
+pub fn count_connections(pid: u32) -> u32 {
+    use windows::Win32::NetworkManagement::IpHelper::{
+        GetExtendedTcpTable, MIB_TCPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,
+    };
+    use windows::Win32::Networking::WinSock::AF_INET;
+
+    unsafe {
+        let mut size: u32 = 0;
+        let _ = GetExtendedTcpTable(None, &mut size, false, AF_INET.0 as u32, TCP_TABLE_OWNER_PID_ALL, 0);
+        let mut buf = vec![0u8; size as usize];
+        let ret = GetExtendedTcpTable(
+            Some(buf.as_mut_ptr() as *mut _), &mut size, false,
+            AF_INET.0 as u32, TCP_TABLE_OWNER_PID_ALL, 0,
+        );
+        if ret == 0 {
+            let table = buf.as_ptr() as *const MIB_TCPTABLE_OWNER_PID;
+            let count = (*table).dwNumEntries as usize;
+            let rows_ptr = (*table).table.as_ptr();
+            let rows = std::slice::from_raw_parts(rows_ptr, count);
+            rows.iter().filter(|r| r.dwOwningPid == pid).count() as u32
+        } else {
+            0
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn count_connections(_pid: u32) -> u32 { 0 }
 
 #[cfg(target_os = "windows")]
 fn get_net_bytes() -> (f64, f64) {

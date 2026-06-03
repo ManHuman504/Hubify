@@ -23,8 +23,110 @@
 
 /* ── Grid ──────────────────────────────────────────────────────── */
 .lib-grid {
-  /* Class .hub-grid is applied in the React component */
   --grid-size: 110px;
+}
+
+.lib-card.hub-card-base {
+  border: none;
+  background: transparent;
+}
+
+.lib-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: var(--bg-elevated);
+  transition: all 0.15s ease-out;
+}
+
+.lib-card:hover {
+  background: var(--bg-hover);
+  transform: scale(1.02);
+  z-index: 10;
+}
+
+.lib-card-added {
+  opacity: 0.4;
+  cursor: default;
+  filter: grayscale(1);
+}
+
+.lib-card-added:hover {
+  transform: none;
+  background: var(--bg-elevated);
+}
+
+.lib-card-icon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lib-card-icon img {
+  width: 72%;
+  height: 72%;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.2));
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.lib-card:hover .lib-card-icon img {
+  transform: scale(1.08);
+}
+
+.lib-card-fallback {
+  width: 58%;
+  height: 58%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-radius: 16px;
+  text-transform: uppercase;
+}
+
+.lib-card-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 6px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.lib-card:hover .lib-card-overlay {
+  color: var(--text-primary);
+}
+
+.lib-card-added-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #28c840;
+  color: #fff;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  box-shadow: 0 0 6px rgba(40, 200, 64, 0.4);
 }
 
 .lib-card {
