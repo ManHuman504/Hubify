@@ -17,11 +17,10 @@ interface StepState {
   message: string
 }
 
-const STEPS: { id: string; label: string }[] = [
+const SETUP_STEPS: { id: string; label: string }[] = [
   { id: 'winget',  label: 'Package manager (winget)' },
   { id: 'sources', label: 'Package sources' },
   { id: 'scan',    label: 'Scanning installed apps' },
-  { id: 'done',    label: 'Finishing up' },
 ]
 
 interface Props {
@@ -29,32 +28,25 @@ interface Props {
 }
 
 export default function FirstRun({ onComplete }: Props) {
-  const [phase, setPhase] = useState<'intro' | 'setup' | 'done'>('intro')
-  const [percent, setPercent] = useState(0)
-  const [steps, setSteps] = useState<StepState[]>(
-    STEPS.map(s => ({ ...s, status: 'pending', message: '' }))
+  const [guardianEnabled, setGuardianEnabled] = useState(true)
+  const [phase, setPhase] = useState<'onboard1' | 'onboard2' | 'done'>('onboard1')
+  const [setupSteps, setSetupSteps] = useState<StepState[]>(
+    SETUP_STEPS.map(s => ({ ...s, status: 'pending', message: '' }))
   )
-  const [error, setError] = useState<string | null>(null)
+  const [setupPercent, setSetupPercent] = useState(0)
+  const [setupError, setSetupError] = useState<string | null>(null)
+  const [setupComplete, setSetupComplete] = useState(false)
   const unlistenRef = useRef<(() => void) | null>(null)
 
   const updateStep = (id: string, status: StepState['status'], message: string) => {
-    setSteps(prev => prev.map(s => s.id === id ? { ...s, status, message } : s))
+    setSetupSteps(prev => prev.map(s => s.id === id ? { ...s, status, message } : s))
   }
 
-  const startSetup = async () => {
-    setPhase('setup')
-    setError(null)
-
-    // Listen for progress events from Rust
+  const runSetup = async () => {
     const unlisten = await listen<SetupProgress>('setup_progress', (event) => {
       const { step, status, message, percent: p } = event.payload
-      setPercent(p)
-
-      if (step === 'done') {
-        setPhase('done')
-        return
-      }
-
+      setSetupPercent(p)
+      if (step === 'done') return
       updateStep(step, status as StepState['status'], message)
     })
     unlistenRef.current = unlisten
@@ -63,20 +55,30 @@ export default function FirstRun({ onComplete }: Props) {
       await invoke('run_first_setup')
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      setError(msg)
-      setPhase('done')
-    } finally {
-      unlisten()
+      setSetupError(msg)
+    }
+
+    if (unlistenRef.current) {
+      unlistenRef.current()
       unlistenRef.current = null
     }
+
+    setSetupSteps(prev => prev.map(s =>
+      s.status === 'pending' || s.status === 'running'
+        ? { ...s, status: 'ok', message: '' }
+        : s
+    ))
+    setSetupPercent(100)
+    setSetupComplete(true)
   }
 
   useEffect(() => {
+    runSetup()
     return () => { unlistenRef.current?.() }
   }, [])
 
-  // ── Intro screen ──────────────────────────────────────────────────────────
-  if (phase === 'intro') {
+  // ── Onboarding page 1: Tray + setup ────────────────────────────
+  if (phase === 'onboard1') {
     return (
       <div className="fr-root">
         <div className="fr-card">
@@ -84,129 +86,160 @@ export default function FirstRun({ onComplete }: Props) {
             <span className="fr-logo-mark">H</span>
           </div>
           <h1 className="fr-title">Welcome to Hubify</h1>
-          <p className="fr-subtitle">
-            Let's get you set up. We'll install a few lightweight tools, scan your
-            installed apps, and have everything ready in under a minute.
-          </p>
 
-          <div className="fr-checklist">
-            <div className="fr-check-item">
-              <span className="fr-check-icon">📦</span>
-              <div>
-                <p className="fr-check-label">winget</p>
-                <p className="fr-check-desc">Windows package manager for the Store feature</p>
-              </div>
-            </div>
-            <div className="fr-check-item">
-              <span className="fr-check-icon">🔍</span>
-              <div>
-                <p className="fr-check-label">Registry scan</p>
-                <p className="fr-check-desc">Finds all installed programs on your PC automatically</p>
-              </div>
+          <div className="fr-media">
+            <div className="fr-gif-placeholder">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="fr-gif-icon">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+                <path d="M12 8v4l3 3"/>
+                <path d="M8 12h8"/>
+              </svg>
+              <span className="fr-gif-label">preview</span>
             </div>
           </div>
 
-          <button className="fr-btn-start" onClick={startSetup}>
-            Get started →
-          </button>
+          <p className="fr-subtitle">
+            Hubify lives in your system tray — click to access all saved programs
+            instantly, no digging through the Start menu.
+          </p>
+          <p className="fr-subtitle">
+            Drag the Hubify icon from the tray onto your taskbar to pin it
+            for one-click access.
+          </p>
 
-          <button className="fr-btn-skip" onClick={() => { invoke('mark_setup_complete'); onComplete() }}>
-            Skip setup
-          </button>
+          <div className="fr-divider" />
+
+          <div className="fr-setup-block">
+            <div className="fr-progress-track">
+              <div className="fr-progress-fill" style={{ width: `${setupPercent}%` }} />
+            </div>
+            <div className="fr-steps">
+              {setupSteps.map(step => (
+                <div key={step.id} className={`fr-step fr-step-${step.status}`}>
+                  <span className="fr-step-icon">
+                    {step.status === 'pending' && <span className="fr-dot" />}
+                    {step.status === 'running' && <span className="fr-spinner" />}
+                    {step.status === 'ok'      && '✓'}
+                    {step.status === 'error'   && '✕'}
+                    {step.status === 'skip'    && '–'}
+                  </span>
+                  <div className="fr-step-info">
+                    <p className="fr-step-label">{step.label}</p>
+                    {step.message && <p className="fr-step-msg">{step.message}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="fr-guardian-toggle">
+            <p className="fr-guardian-label">🛡️ Guardian Mode</p>
+            <p className="fr-guardian-desc">
+              Monitor startup registry and get notified when new programs add themselves to autostart?
+            </p>
+            <div className="fr-guardian-btns">
+              <button
+                className={`fr-guardian-btn ${!guardianEnabled ? 'active' : ''}`}
+                onClick={() => setGuardianEnabled(false)}
+                disabled={!setupComplete}
+              >No, thanks</button>
+              <button
+                className={`fr-guardian-btn ${guardianEnabled ? 'active' : ''}`}
+                onClick={() => setGuardianEnabled(true)}
+                disabled={!setupComplete}
+              >Yes, enable</button>
+            </div>
+          </div>
+
+          {setupComplete ? (
+            <button
+              className="fr-btn-start"
+              onClick={() => setPhase('onboard2')}
+            >
+              Next →
+            </button>
+          ) : (
+            <div className="fr-setup-hint">
+              {setupError
+                ? <span className="fr-error-text">Setup had issues</span>
+                : <span className="fr-spinner" style={{ display: 'inline-block' }} />
+              }
+            </div>
+          )}
+
+          {!setupComplete && (
+            <button
+              className="fr-btn-skip"
+              onClick={() => {
+                invoke('set_guardian_enabled', { enabled: guardianEnabled }).catch(() => {})
+                invoke('mark_setup_complete').catch(() => {})
+                setPhase('onboard2')
+              }}
+            >
+              Skip setup
+            </button>
+          )}
         </div>
       </div>
     )
   }
 
-  // ── Setup in progress ────────────────────────────────────────────────────
-  if (phase === 'setup') {
+  // ── Onboarding page 2: Process tree ───────────────────────────
+  if (phase === 'onboard2') {
     return (
       <div className="fr-root">
         <div className="fr-card">
           <div className="fr-logo">
             <span className="fr-logo-mark">H</span>
           </div>
-          <h1 className="fr-title">Setting up…</h1>
+          <h1 className="fr-title">Everything in One Tree</h1>
 
-          {/* Progress bar */}
-          <div className="fr-progress-track">
-            <div className="fr-progress-fill" style={{ width: `${percent}%` }} />
+          <div className="fr-media">
+            <div className="fr-gif-placeholder">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="fr-gif-icon">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="12" cy="8" r="2"/>
+                <circle cx="8" cy="16" r="2"/>
+                <circle cx="16" cy="16" r="2"/>
+                <line x1="12" x2="8" y1="10" y2="14"/>
+                <line x1="12" x2="16" y1="10" y2="14"/>
+              </svg>
+              <span className="fr-gif-label">preview</span>
+            </div>
           </div>
-          <p className="fr-progress-pct">{percent}%</p>
 
-          {/* Steps list */}
-          <div className="fr-steps">
-            {steps.map(step => (
-              <div key={step.id} className={`fr-step fr-step-${step.status}`}>
-                <span className="fr-step-icon">
-                  {step.status === 'pending' && <span className="fr-dot" />}
-                  {step.status === 'running' && <span className="fr-spinner" />}
-                  {step.status === 'ok'      && '✓'}
-                  {step.status === 'error'   && '✕'}
-                  {step.status === 'skip'    && '–'}
-                </span>
-                <div className="fr-step-info">
-                  <p className="fr-step-label">{step.label}</p>
-                  {step.message && (
-                    <p className="fr-step-msg">{step.message}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <p className="fr-subtitle">
+            Create shortcuts for your favourite apps, and Hubify automatically
+            organises all running processes into a single expandable tree —
+            no more hunting through Task Manager.
+          </p>
+
+          <button
+            className="fr-btn-start"
+            onClick={() => {
+              invoke('set_guardian_enabled', { enabled: guardianEnabled }).catch(() => {})
+              invoke('mark_setup_complete').catch(() => {})
+              onComplete()
+            }}
+          >
+            Finish →
+          </button>
         </div>
       </div>
     )
   }
 
-  // ── Done ─────────────────────────────────────────────────────────────────
+  // ── Done (fallback) ─────────────────────────────────────────────
   return (
     <div className="fr-root">
       <div className="fr-card">
         <div className="fr-logo">
           <span className="fr-logo-mark">H</span>
         </div>
-
-        {error ? (
-          <>
-            <h1 className="fr-title">Setup had issues</h1>
-            <p className="fr-subtitle fr-error-text">{error}</p>
-            <p className="fr-subtitle" style={{ marginTop: 6 }}>
-              You can still use Hubify — some features may be limited.
-            </p>
-          </>
-        ) : (
-          <>
-            <div className="fr-done-icon">✓</div>
-            <h1 className="fr-title">You're all set</h1>
-            <p className="fr-subtitle">
-              Hubify is ready. Your installed apps are available in the Library tab.
-            </p>
-          </>
-        )}
-
-        {/* Summary of steps */}
-        <div className="fr-steps fr-steps-compact">
-          {steps.map(step => (
-            step.status !== 'pending' && (
-              <div key={step.id} className={`fr-step fr-step-${step.status}`}>
-                <span className="fr-step-icon">
-                  {step.status === 'ok'    && '✓'}
-                  {step.status === 'error' && '✕'}
-                  {step.status === 'skip'  && '–'}
-                </span>
-                <div className="fr-step-info">
-                  <p className="fr-step-label">{step.label}</p>
-                  {step.message && <p className="fr-step-msg">{step.message}</p>}
-                </div>
-              </div>
-            )
-          ))}
-        </div>
-
-        <button className="fr-btn-start" onClick={onComplete}>
-          Open Hubify →
-        </button>
+        <div className="fr-done-icon">✓</div>
+        <h1 className="fr-title">You're all set</h1>
+        <p className="fr-subtitle">Hubify is ready. Enjoy!</p>
+        <button className="fr-btn-start" onClick={onComplete}>Open Hubify →</button>
       </div>
     </div>
   )

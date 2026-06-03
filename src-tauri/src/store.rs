@@ -64,7 +64,11 @@ pub struct Store {
     pub scanned_apps: Vec<DetectedApp>,
     #[serde(default)]
     pub theme: ThemeConfig,
+    #[serde(default = "default_guardian")]
+    pub guardian_enabled: bool,
 }
+
+fn default_guardian() -> bool { true }
 
 fn store_path(app_handle: &tauri::AppHandle) -> PathBuf {
     app_handle
@@ -77,10 +81,10 @@ fn store_path(app_handle: &tauri::AppHandle) -> PathBuf {
 pub fn load(app_handle: &tauri::AppHandle) -> Store {
     let path = store_path(app_handle);
     if !path.exists() {
-        return Store { apps: vec![], groups: vec![], scanned_apps: vec![], theme: ThemeConfig::default() };
+        return Store { apps: vec![], groups: vec![], scanned_apps: vec![], theme: ThemeConfig::default(), guardian_enabled: true };
     }
     let data = fs::read_to_string(&path).unwrap_or_default();
-    
+
     // Try current format
     if let Ok(store) = serde_json::from_str::<Store>(&data) {
         return store;
@@ -90,15 +94,15 @@ pub fn load(app_handle: &tauri::AppHandle) -> Store {
     #[derive(Deserialize)]
     struct LegacyStoreV1 { apps: Vec<App>, groups: Vec<Group> }
     if let Ok(legacy) = serde_json::from_str::<LegacyStoreV1>(&data) {
-        return Store { apps: legacy.apps, groups: legacy.groups, scanned_apps: vec![], theme: ThemeConfig::default() };
+        return Store { apps: legacy.apps, groups: legacy.groups, scanned_apps: vec![], theme: ThemeConfig::default(), guardian_enabled: true };
     }
 
     // Legacy: plain array of apps
     if let Ok(apps) = serde_json::from_str::<Vec<App>>(&data) {
-        return Store { apps, groups: vec![], scanned_apps: vec![], theme: ThemeConfig::default() };
+        return Store { apps, groups: vec![], scanned_apps: vec![], theme: ThemeConfig::default(), guardian_enabled: true };
     }
 
-    Store { apps: vec![], groups: vec![], scanned_apps: vec![], theme: ThemeConfig::default() }
+    Store { apps: vec![], groups: vec![], scanned_apps: vec![], theme: ThemeConfig::default(), guardian_enabled: true }
 }
 
 pub fn save(app_handle: &tauri::AppHandle, store: &Store) {

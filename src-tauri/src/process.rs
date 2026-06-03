@@ -1,7 +1,7 @@
 use serde::Serialize;
-use sysinfo::{ProcessesToUpdate, System};
-use std::path::Path;
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 #[derive(Serialize, Clone)]
 pub struct ProcessInfo {
@@ -11,51 +11,40 @@ pub struct ProcessInfo {
     pub mem_mb: f64,
 }
 
-#[derive(Serialize, Clone)]
-pub struct AllProcessEntry {
-    pub pid: u32,
-    pub name: String,
-    pub cpu: f32,
-    pub mem_mb: f64,
-    pub connections: u32,
-    pub path: Option<String>,
+struct SharedState {
+    sys: sysinfo::System,
+    last_refresh: std::time::Instant,
 }
 
-/// Get ALL running processes (for Monitor/Task Manager view)
-pub fn get_all_processes() -> Vec<AllProcessEntry> {
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+impl SharedState {
+    fn new() -> Self {
+        let mut sys = sysinfo::System::new();
+        sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        Self {
+            sys,
+            last_refresh: std::time::Instant::now(),
+        }
+    }
 
-    let mut result: Vec<AllProcessEntry> = sys.processes()
-        .iter()
-        .map(|(_, proc)| {
-            AllProcessEntry {
-                pid: proc.pid().as_u32(),
-                name: proc.name().to_string_lossy().to_string(),
-                cpu: proc.cpu_usage(),
-                mem_mb: proc.memory() as f64 / 1024.0 / 1024.0,
-                connections: 0,
-                path: proc.exe().map(|p| p.to_string_lossy().to_string()),
-            }
-        })
-        .collect();
-
-    result.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap_or(std::cmp::Ordering::Equal));
-    result.truncate(200); // limit to 200 processes for performance
-    result
+    fn refresh_if_stale(&mut self) {
+        if self.last_refresh.elapsed() >= std::time::Duration::from_millis(500) {
+            self.sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+            self.last_refresh = std::time::Instant::now();
+        }
+    }
 }
+
+lazy_static::lazy_static! {
+    static ref PROCESS_STATE: Arc<Mutex<SharedState>> = Arc::new(Mutex::new(SharedState::new()));
+}
+
+
 
 pub fn get_processes_info(exe_paths: &[String]) -> HashMap<String, ProcessInfo> {
-    let mut sys = System::new();
-    // First pass
-    sys.refresh_processes(ProcessesToUpdate::All, true);
-    // Short sleep so sysinfo can measure CPU delta
-    std::thread::sleep(std::time::Duration::from_millis(200));
-    // Second pass
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+    let mut state = PROCESS_STATE.lock().unwrap();
+    state.refresh_if_stale();
 
+    let sys = &state.sys;
     let mut target_names: HashMap<String, Vec<String>> = HashMap::new();
     for path in exe_paths {
         let name = Path::new(path)
@@ -65,8 +54,7 @@ pub fn get_processes_info(exe_paths: &[String]) -> HashMap<String, ProcessInfo> 
         target_names.entry(name).or_default().push(path.clone());
     }
 
-    let mut results = HashMap::new();
-
+    let mut results: HashMap<String, ProcessInfo> = HashMap::new();
     for (_, proc) in sys.processes() {
         let name = proc.name().to_string_lossy().to_lowercase();
         if let Some(paths) = target_names.get(&name) {
@@ -77,17 +65,20 @@ pub fn get_processes_info(exe_paths: &[String]) -> HashMap<String, ProcessInfo> 
                 mem_mb: proc.memory() as f64 / 1024.0 / 1024.0,
             };
             for p in paths {
-                if !results.contains_key(p) {
-                    results.insert(p.clone(), info.clone());
-                }
+                results.entry(p.clone()).or_insert(info.clone());
             }
         }
     }
 
     for path in exe_paths {
-        if !results.contains_key(path) {
-            results.insert(path.clone(), ProcessInfo { running: false, pid: None, cpu: 0.0, mem_mb: 0.0 });
-        }
+        results
+            .entry(path.clone())
+            .or_insert(ProcessInfo {
+                running: false,
+                pid: None,
+                cpu: 0.0,
+                mem_mb: 0.0,
+            });
     }
 
     results
@@ -95,7 +86,14 @@ pub fn get_processes_info(exe_paths: &[String]) -> HashMap<String, ProcessInfo> 
 
 pub fn get_process_info(exe_path: &str) -> ProcessInfo {
     let res = get_processes_info(&[exe_path.to_string()]);
-    res.get(exe_path).cloned().unwrap_or(ProcessInfo { running: false, pid: None, cpu: 0.0, mem_mb: 0.0 })
+    res.get(exe_path)
+        .cloned()
+        .unwrap_or(ProcessInfo {
+            running: false,
+            pid: None,
+            cpu: 0.0,
+            mem_mb: 0.0,
+        })
 }
 
 pub fn kill_process(exe_path: &str) -> bool {
@@ -104,11 +102,11 @@ pub fn kill_process(exe_path: &str) -> bool {
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_default();
 
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+    let mut state = PROCESS_STATE.lock().unwrap();
+    state.refresh_if_stale();
 
     let mut killed = false;
-    for (_, proc) in sys.processes() {
+    for (_, proc) in state.sys.processes() {
         if proc.name().to_string_lossy().to_lowercase() == exe_name {
             proc.kill();
             killed = true;
@@ -117,13 +115,14 @@ pub fn kill_process(exe_path: &str) -> bool {
     killed
 }
 
-pub fn kill_by_pid(pid: u32) -> bool {
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
-    if let Some(proc) = sys.process(sysinfo::Pid::from_u32(pid)) {
-        proc.kill();
-        true
-    } else {
-        false
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_process_info_returns_bool_fast() {
+        let info = get_process_info("nonexistent.exe");
+        assert!(!info.running);
+        assert!(info.pid.is_none());
     }
 }

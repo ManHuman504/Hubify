@@ -1,0 +1,163 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+.gp-overlay {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.gp-modal {
+  background: #1e1e22;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 20px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.gp-waiting {
+  text-align: center;
+  color: #888;
+  font-size: 14px;
+}
+
+.gp-spinner {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid #333;
+  border-top-color: #7c6fff;
+  border-radius: 50%;
+  animation: gp-spin 0.8s linear infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes gp-spin {
+  to { transform: rotate(360deg); }
+}
+
+.gp-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.gp-icon {
+  font-size: 22px;
+}
+
+.gp-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #eee;
+}
+
+.gp-desc {
+  font-size: 13px;
+  color: #999;
+  margin: 0 0 14px;
+}
+
+.gp-info {
+  background: #2a2a30;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 14px;
+}
+
+.gp-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 0;
+}
+
+.gp-row + .gp-row {
+  border-top: 1px solid #333;
+}
+
+.gp-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+}
+
+.gp-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ddd;
+  word-break: break-word;
+}
+
+.gp-path {
+  font-family: monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: #999;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.gp-path:hover {
+  color: #7c6fff;
+}
+
+.gp-ask {
+  font-size: 13px;
+  color: #ccc;
+  margin: 0 0 14px;
+}
+
+.gp-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.gp-btn {
+  padding: 8px 22px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.gp-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.gp-btn-deny {
+  background: transparent;
+  color: #f44336;
+  border: 1px solid #f44336;
+}
+
+.gp-btn-deny:hover:not(:disabled) {
+  background: rgba(244, 67, 54, 0.1);
+}
+
+.gp-btn-allow {
+  background: #7c6fff;
+  color: #fff;
+}
+
+.gp-btn-allow:hover:not(:disabled) {
+  filter: brightness(1.1);
+}

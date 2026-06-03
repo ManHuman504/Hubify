@@ -103,43 +103,34 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     }
   }, [refresh])
 
-  // Poll process status every 1s
+// Poll process status every 2s to reduce IPC frequency
   useEffect(() => {
     let lastActiveJson = ''
+    let pending = false
 
     const poll = async () => {
-      const current = appsRef.current
-      if (!current.length) return
-      
+      if (pending) return
+      pending = true
       try {
+        const current = appsRef.current
+        if (!current.length) { pending = false; return }
+
         const paths = current.map(a => a.path)
         const infoObj = await invoke<Record<string, ProcessInfo>>('get_processes_info', { paths })
-        
         const newProcessInfo: Record<string, ProcessInfo> = {}
-        for (const app of current) {
-          if (infoObj[app.path]) {
-            newProcessInfo[app.id] = infoObj[app.path]
-          }
-        }
-        
+        for (const app of current) { if (infoObj[app.path]) { newProcessInfo[app.id] = infoObj[app.path] } }
+
         setProcessInfo(newProcessInfo)
 
-        const activeApps = current
-          .filter(a => newProcessInfo[a.id]?.running)
-          .map(a => ({ name: a.name, path: a.path }))
+        const activeApps = current.filter(a => newProcessInfo[a.id]?.running).map(a => ({ name: a.name, path: a.path }))
 
-        // Only rebuild tray menu when active apps actually change
         const json = JSON.stringify(activeApps)
-        if (json !== lastActiveJson) {
-          lastActiveJson = json
-          invoke('update_tray_menu', { activeApps }).catch(() => {})
-        }
-      } catch (e) {
-         console.error('Failed to poll process info', e)
-      }
+        if (json !== lastActiveJson) { lastActiveJson = json; invoke('update_tray_menu', { activeApps }).catch(() => {}) }
+      } catch (e) { console.error('Failed to poll process info', e) }
+      pending = false
     }
     poll()
-    const id = setInterval(poll, 1000)
+    const id = setInterval(poll, 2000)
     return () => clearInterval(id)
   }, [])
 

@@ -12,12 +12,13 @@ mod autostart;
 mod uninstaller;
 mod everything;
 mod keybinds;
+mod guardian;
 
 use store::{App, Group, Store, CustomTheme};
 use db::{DailyActivity, AppStat, TodaySummary};
 use tauri::{Manager, Emitter};
 use window_vibrancy::{apply_mica, apply_acrylic};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use network::ConnectionInfo;
 use std::thread;
 use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState, TrayIconEvent};
@@ -251,23 +252,6 @@ async fn get_processes_info(paths: Vec<String>) -> Result<std::collections::Hash
 #[tauri::command]
 fn kill_app(path: String) -> bool {
     process::kill_process(&path)
-}
-
-#[tauri::command]
-fn kill_process_by_pid(pid: u32) -> bool {
-    process::kill_by_pid(pid)
-}
-
-#[tauri::command]
-async fn get_all_processes() -> Result<Vec<process::AllProcessEntry>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut processes = process::get_all_processes();
-        // Add network connection counts for top processes
-        for p in &mut processes {
-            p.connections = network::count_connections(p.pid);
-        }
-        Ok(processes)
-    }).await.map_err(|e| e.to_string())?
 }
 
 /// Focus an existing window of a running app, or launch it if not running
@@ -916,6 +900,219 @@ fn find_installed_exe(name: &str) -> Option<String> {
     { let _ = name; None }
 }
 
+// ── Guardian: startup monitoring responses ───────────────────────────────────
+#[tauri::command]
+fn guardian_allow_startup(name: String, _cmd: String) -> Result<(), String> {
+    println!("Guardian: allowed startup entry '{}'", name);
+    Ok(())
+}
+#[tauri::command]
+fn guardian_deny_startup(name: String, cmd: String) -> Result<(), String> {
+    println!("Guardian: denied startup entry '{}'", name);
+    crate::autostart::set_autostart(&name, &cmd, false)
+}
+#[tauri::command]
+fn guardian_open_folder(cmd: String) -> Result<(), String> {
+    let path = std::path::Path::new(&cmd);
+    let parent = path.parent().unwrap_or(path);
+    std::process::Command::new("explorer")
+        .arg(parent.as_os_str())
+        .spawn()
+        .map_err(|e| format!("Failed to open folder: {}", e))?;
+    Ok(())
+}
+
+// ── Guardian settings ────────────────────────────────────────────────────────
+#[tauri::command]
+fn get_guardian_enabled(app: tauri::AppHandle) -> bool {
+    crate::store::load(&app).guardian_enabled
+}
+#[tauri::command]
+fn set_guardian_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    let mut store = crate::store::load(&app);
+    store.guardian_enabled = enabled;
+    crate::store::save(&app, &store);
+    Ok(())
+}
+
+// ── Sync ──────────────────────────────────────────────────────────────────────
+use std::sync::Mutex;
+
+lazy_static::lazy_static! {
+    static ref HTTP_CLIENT: Mutex<Option<reqwest::Client>> = Mutex::new(None);
+}
+
+fn get_http_client() -> reqwest::Client {
+    HTTP_CLIENT.lock().unwrap().clone().unwrap_or_else(|| {
+        let c = reqwest::Client::builder().user_agent("Hubify/0.1").build().unwrap_or_default();
+        HTTP_CLIENT.lock().unwrap().replace(c.clone());
+        c
+    })
+}
+
+fn sync_token_path(app: &tauri::AppHandle) -> std::path::PathBuf {
+    app.path().app_data_dir().unwrap().join("sync_token.json")
+}
+fn sync_ignored_path(app: &tauri::AppHandle) -> std::path::PathBuf {
+    app.path().app_data_dir().unwrap().join("sync_ignored.json")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SyncToken { pub email: String, pub token: String }
+
+fn load_sync_token(app: &tauri::AppHandle) -> Option<SyncToken> {
+    let p = sync_token_path(app);
+    if !p.exists() { return None; }
+    let data = std::fs::read_to_string(p).ok()?;
+    serde_json::from_str(&data).ok()
+}
+fn save_sync_token(app: &tauri::AppHandle, t: &SyncToken) {
+    let p = sync_token_path(app);
+    let _ = std::fs::create_dir_all(p.parent().unwrap());
+    let _ = std::fs::write(p, serde_json::to_string_pretty(t).unwrap());
+}
+fn clear_sync_token(app: &tauri::AppHandle) {
+    let _ = std::fs::remove_file(sync_token_path(app));
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct IgnoredList { pub ignored: Vec<String> }
+fn load_ignored_list(app: &tauri::AppHandle) -> IgnoredList {
+    let p = sync_ignored_path(app);
+    if !p.exists() { return IgnoredList { ignored: vec![] }; }
+    let data = std::fs::read_to_string(p).ok().unwrap_or_default();
+    serde_json::from_str(&data).unwrap_or(IgnoredList { ignored: vec![] })
+}
+fn save_ignored_list(app: &tauri::AppHandle, list: &IgnoredList) {
+    let p = sync_ignored_path(app);
+    let _ = std::fs::create_dir_all(p.parent().unwrap());
+    let _ = std::fs::write(p, serde_json::to_string_pretty(list).unwrap());
+}
+
+#[derive(Serialize)] struct RegisterRequest { pub email: String, pub password: String }
+#[derive(Serialize)] struct LoginRequest { pub email: String, pub password: String }
+#[derive(Serialize, Deserialize)] struct AuthResponse { pub token: String, pub ok: bool }
+
+#[derive(Serialize, Deserialize)]
+struct SyncAppEntry { pub name: String, pub path: String, pub group: Option<String>, pub hotkey: Option<String> }
+#[derive(Serialize, Deserialize)]
+struct SyncGroupEntry { pub id: String, pub name: String, pub color: Option<String> }
+#[derive(Serialize, Deserialize)]
+struct SyncThemeEntry { pub active: String, pub custom_themes: Vec<crate::store::CustomTheme> }
+#[derive(Serialize, Deserialize)]
+struct SyncStatEntry { pub path: String, pub total_minutes: f64 }
+
+#[derive(Serialize)]
+struct SyncPayload {
+    pub apps: Vec<SyncAppEntry>,
+    pub groups: Vec<SyncGroupEntry>,
+    pub ignored: Vec<String>,
+    pub theme: SyncThemeEntry,
+    pub stats: Vec<SyncStatEntry>,
+}
+#[derive(Serialize, Deserialize)]
+struct SyncRemote {
+    pub apps: Vec<SyncAppEntry>,
+    pub groups: Vec<SyncGroupEntry>,
+    pub theme: SyncThemeEntry,
+    pub stats: Vec<SyncStatEntry>,
+}
+
+fn sync_api_url() -> String {
+    std::env::var("HUBIFY_SYNC_URL").unwrap_or_else(|_| "https://sync.hubify.app/api".to_string())
+}
+
+async fn sync_api_req<T: Serialize, R: for<'de> serde::Deserialize<'de>>(
+    path: &str, token: Option<&str>, body: &T,
+) -> Result<R, String> {
+    let url = format!("{}{}", sync_api_url(), path);
+    let mut req = get_http_client().post(&url).json(body);
+    if let Some(t) = token { req = req.header("Authorization", format!("Bearer {}", t)); }
+    let resp = req.send().await.map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        let st = resp.status();
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(format!("HTTP {}: {}", st, txt));
+    }
+    resp.json::<R>().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn sync_register(app: tauri::AppHandle, email: String, password: String) -> Result<AuthResponse, String> {
+    let req = RegisterRequest { email, password };
+    let resp: AuthResponse = sync_api_req("/register", None, &req).await?;
+    if resp.ok { save_sync_token(&app, &SyncToken { email: req.email, token: resp.token.clone() }); }
+    Ok(resp)
+}
+#[tauri::command]
+async fn sync_login(app: tauri::AppHandle, email: String, password: String) -> Result<AuthResponse, String> {
+    let req = LoginRequest { email, password };
+    let resp: AuthResponse = sync_api_req("/login", None, &req).await?;
+    if resp.ok { save_sync_token(&app, &SyncToken { email: req.email, token: resp.token.clone() }); }
+    Ok(resp)
+}
+#[tauri::command]
+fn sync_logout(app: tauri::AppHandle) -> Result<(), String> { clear_sync_token(&app); Ok(()) }
+#[tauri::command]
+fn sync_get_token(app: tauri::AppHandle) -> Result<Option<SyncToken>, String> { Ok(load_sync_token(&app)) }
+
+#[tauri::command]
+async fn sync_push(app: tauri::AppHandle) -> Result<(), String> {
+    let token = load_sync_token(&app).ok_or("Not logged in")?;
+    let s = crate::store::load(&app);
+    let ign = load_ignored_list(&app);
+    let payload = SyncPayload {
+        apps: s.apps.into_iter().map(|a| SyncAppEntry {
+            name: a.name, path: a.path, group: a.group_id, hotkey: a.hotkey
+        }).collect(),
+        groups: s.groups.into_iter().map(|g| SyncGroupEntry { id: g.id, name: g.name, color: g.color }).collect(),
+        ignored: ign.ignored,
+        theme: SyncThemeEntry { active: s.theme.active, custom_themes: s.theme.custom_themes },
+        stats: vec![],
+    };
+    sync_api_req::<SyncPayload, ()>("/sync/push", Some(&token.token), &payload).await?;
+    Ok(())
+}
+#[tauri::command]
+async fn sync_pull(app: tauri::AppHandle) -> Result<SyncRemote, String> {
+    let token = load_sync_token(&app).ok_or("Not logged in")?;
+    let remote: SyncRemote = sync_api_req("/sync/pull", Some(&token.token), &()).await?;
+    Ok(remote)
+}
+#[tauri::command]
+async fn sync_import(app: tauri::AppHandle, remote: SyncRemote) -> Result<(), String> {
+    let mut store = crate::store::load(&app);
+    store.apps = remote.apps.into_iter().map(|a| crate::store::App {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: a.name,
+        path: a.path,
+        icon: None,
+        group_id: a.group,
+        hotkey: a.hotkey,
+    }).collect();
+    store.groups = remote.groups.into_iter().map(|g| crate::store::Group {
+        id: g.id,
+        name: g.name,
+        color: g.color,
+    }).collect();
+    store.theme = crate::store::ThemeConfig {
+        active: remote.theme.active,
+        custom_themes: remote.theme.custom_themes,
+    };
+    crate::store::save(&app, &store);
+    let _ = app.emit("store_updated", ());
+    Ok(())
+}
+#[tauri::command]
+fn sync_set_ignored(app: tauri::AppHandle, ignored: Vec<String>) -> Result<(), String> {
+    save_ignored_list(&app, &IgnoredList { ignored });
+    Ok(())
+}
+#[tauri::command]
+fn sync_get_ignored(app: tauri::AppHandle) -> Result<IgnoredList, String> {
+    Ok(load_ignored_list(&app))
+}
+
 // ── App entry point ──────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -1002,6 +1199,9 @@ pub fn run() {
             
             // ── Initialize Native Indexer ──
             everything::init_indexer();
+
+            // ── Guardian: monitor startup changes ──
+            guardian::start(app_handle.clone());
 
             // ── Background IPC Listener ──
             let app_handle_for_ipc = app_handle.clone();
@@ -1150,8 +1350,20 @@ pub fn run() {
             get_app_hourly,
             set_app_hotkey,
             set_global_hotkey,
-            get_all_processes,
-            kill_process_by_pid,
+            guardian_allow_startup,
+            guardian_deny_startup,
+            guardian_open_folder,
+            get_guardian_enabled,
+            set_guardian_enabled,
+            sync_register,
+            sync_login,
+            sync_logout,
+            sync_get_token,
+            sync_push,
+            sync_pull,
+            sync_import,
+            sync_set_ignored,
+            sync_get_ignored,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

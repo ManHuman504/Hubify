@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import Titlebar from './components/Titlebar'
 import Sidebar from './components/Sidebar'
 import Home from './pages/Home'
@@ -10,12 +11,14 @@ import Store from './pages/Store'
 import Tools from './pages/Tools'
 import Tray from './pages/Tray'
 import Analytics from './pages/Analytics'
+import Sync from './pages/Sync'
 import Settings from './pages/Settings'
 import FirstRun from './pages/FirstRun'
 import ThemeEngine from './components/ThemeEngine'
+import GuardianPopup from './pages/GuardianPopup'
 import { AppsProvider } from './hooks/useApps'
 
-export type Page = 'home' | 'library' | 'store' | 'tools' | 'tray' | 'analytics' | 'settings'
+export type Page = 'home' | 'library' | 'store' | 'tools' | 'tray' | 'analytics' | 'sync' | 'settings'
 
 interface SetupStatus {
   completed: boolean
@@ -23,7 +26,7 @@ interface SetupStatus {
   initial_scan_done: boolean
 }
 
-export default function App() {
+function MainApp() {
   const [page, setPage] = useState<Page>('home')
   const [visited, setVisited] = useState<Set<Page>>(new Set(['home']))
 
@@ -32,37 +35,24 @@ export default function App() {
     setVisited(prev => new Set(prev).add(p))
   }
 
-  // null = still loading, false = needs setup, true = ready
   const [setupDone, setSetupDone] = useState<boolean | null>(null)
 
   useEffect(() => {
     invoke<SetupStatus>('get_setup_status')
-      .then(s => {
-        console.log('Setup status:', s);
-        setSetupDone(s.completed);
-      })
-      .catch((err) => {
-        console.error('Failed to get setup status:', err);
-        setSetupDone(true);
-      })
-      
-    // Listen for wake up events from other instances
+      .then(s => { setSetupDone(s.completed) })
+      .catch(() => { setSetupDone(true) })
+
     const unlisten = listen('show_window', async () => {
       const win = getCurrentWindow()
       await win.show()
       await win.setFocus()
     })
-    
-    return () => {
-      unlisten.then(f => f())
-    }
+
+    return () => { unlisten.then(f => f()) }
   }, [])
 
-  const handleSetupComplete = () => {
-    setSetupDone(true)
-  }
+  const handleSetupComplete = () => setSetupDone(true)
 
-  // ── Loading splash ─────────────────────────────────────────────────────────
   if (setupDone === null) {
     return (
       <div className="app" style={{ background: '#121214', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -84,7 +74,6 @@ export default function App() {
     )
   }
 
-  // ── First run ──────────────────────────────────────────────────────────────
   if (!setupDone) {
     return (
       <div className="app">
@@ -94,7 +83,6 @@ export default function App() {
     )
   }
 
-  // ── Main app ───────────────────────────────────────────────────────────────
   return (
     <AppsProvider>
       <ThemeEngine />
@@ -109,10 +97,21 @@ export default function App() {
             {visited.has('tools') && <div className={`page-wrap${page !== 'tools' ? ' hidden' : ''}`}><Tools /></div>}
             {visited.has('tray') && <div className={`page-wrap${page !== 'tray' ? ' hidden' : ''}`}><Tray /></div>}
             {visited.has('analytics') && <div className={`page-wrap${page !== 'analytics' ? ' hidden' : ''}`}><Analytics /></div>}
+            {visited.has('sync') && <div className={`page-wrap${page !== 'sync' ? ' hidden' : ''}`}><Sync /></div>}
             {visited.has('settings') && <div className={`page-wrap${page !== 'settings' ? ' hidden' : ''}`}><Settings /></div>}
           </main>
         </div>
       </div>
     </AppsProvider>
   )
+}
+
+export default function App() {
+  const label = getCurrentWebviewWindow().label
+
+  if (label === 'guardian-popup') {
+    return <GuardianPopup />
+  }
+
+  return <MainApp />
 }

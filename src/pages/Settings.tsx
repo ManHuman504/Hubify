@@ -169,6 +169,7 @@ export default function Settings() {
   const { theme, setTheme, saveTheme, deleteTheme, apps, setAppHotkey } = useApps()
   const [managers, setManagers] = useState({ winget: false, scoop: false, choco: false })
   const [indexerReady, setIndexerReady] = useState(false)
+  const [guardianEnabled, setGuardianEnabled] = useState(true)
 
   // Editing state
   const [editingVars, setEditingVars] = useState<Record<string, string>>({})
@@ -178,6 +179,7 @@ export default function Settings() {
   useEffect(() => {
     invoke('winget_check').then(r => setManagers(r as any)).catch(() => {})
     invoke<boolean>('is_indexer_ready').then(r => setIndexerReady(r)).catch(() => {})
+    invoke<boolean>('get_guardian_enabled').then(r => setGuardianEnabled(r)).catch(() => {})
   }, [])
 
   // Initialize editing vars when starting a new custom theme
@@ -256,8 +258,24 @@ export default function Settings() {
           <>
             <div className="settings-section">
               <p className="settings-section-title">Theme Preset</p>
-              <div className="settings-card">
-                <div className="settings-row">
+            <div className="settings-card">
+              <div className="settings-row">
+                <div className="settings-row-info">
+                  <p className="settings-row-label">Guardian Mode</p>
+                  <p className="settings-row-desc">Monitors startup registry and alerts when new programs add themselves to autostart.</p>
+                </div>
+                <button
+                  className={`toggle-btn ${guardianEnabled ? 'active' : ''}`}
+                  onClick={() => {
+                    const next = !guardianEnabled
+                    setGuardianEnabled(next)
+                    invoke('set_guardian_enabled', { enabled: next }).catch(() => {})
+                  }}
+                >
+                  <div className="toggle-thumb" />
+                </button>
+              </div>
+              <div className="settings-row">
                   <div className="settings-row-info">
                     <p className="settings-row-label">Active Theme</p>
                     <p className="settings-row-desc">Choose a base or your saved custom theme.</p>
