@@ -1,0 +1,283 @@
+.fr-root {
+  width: 100%;
+  height: 100%;
+  padding-top: var(--titlebar-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+}
+
+/* ── Card ──────────────────────────────────────────────────────── */
+.fr-card {
+  width: 460px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 36px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Logo ──────────────────────────────────────────────────────── */
+.fr-logo {
+  margin-bottom: 4px;
+}
+
+.fr-logo-mark {
+  width: 48px;
+  height: 48px;
+  background: var(--accent);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+}
+
+/* ── Text ──────────────────────────────────────────────────────── */
+.fr-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+  letter-spacing: -0.3px;
+  margin: 0;
+}
+
+.fr-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 340px;
+}
+
+.fr-error-text {
+  color: #ff5f57;
+}
+
+/* ── Checklist (intro) ─────────────────────────────────────────── */
+.fr-checklist {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fr-check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+}
+
+.fr-check-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.fr-check-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.fr-check-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+.fr-btn-start {
+  width: 100%;
+  padding: 11px 0;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s, transform 0.1s;
+  letter-spacing: 0.01em;
+}
+
+.fr-btn-start:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.fr-btn-start:active {
+  transform: translateY(0);
+}
+
+.fr-btn-skip {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+  transition: color 0.1s;
+  margin-top: -8px;
+}
+
+.fr-btn-skip:hover {
+  color: var(--text-secondary);
+}
+
+/* ── Progress bar ──────────────────────────────────────────────── */
+.fr-progress-track {
+  width: 100%;
+  height: 5px;
+  background: var(--bg-surface);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.fr-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #a78bff);
+  border-radius: 3px;
+  transition: width 0.25s ease-out;
+}
+
+.fr-progress-pct {
+  font-size: 12px;
+  color: var(--text-muted);
+  align-self: flex-end;
+  margin-top: -12px;
+}
+
+/* ── Steps list ────────────────────────────────────────────────── */
+.fr-steps {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fr-steps-compact {
+  gap: 4px;
+}
+
+.fr-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.fr-step-pending {
+  background: transparent;
+  opacity: 0.4;
+}
+
+.fr-step-running {
+  background: rgba(124, 111, 255, 0.07);
+  border-color: rgba(124, 111, 255, 0.2);
+}
+
+.fr-step-ok {
+  background: rgba(40, 200, 64, 0.06);
+  border-color: rgba(40, 200, 64, 0.15);
+}
+
+.fr-step-error {
+  background: rgba(255, 95, 87, 0.07);
+  border-color: rgba(255, 95, 87, 0.2);
+}
+
+.fr-step-skip {
+  background: var(--bg-hover);
+  opacity: 0.6;
+}
+
+.fr-step-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 1px;
+}
+
+.fr-step-ok    .fr-step-icon { color: #28c840; }
+.fr-step-error .fr-step-icon { color: #ff5f57; }
+.fr-step-skip  .fr-step-icon { color: var(--text-muted); }
+.fr-step-running .fr-step-icon { color: var(--accent); }
+
+.fr-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  display: block;
+}
+
+.fr-spinner {
+  display: block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(124, 111, 255, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: fr-spin 0.7s linear infinite;
+}
+
+@keyframes fr-spin { to { transform: rotate(360deg); } }
+
+.fr-step-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.fr-step-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.fr-step-msg {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Done check ────────────────────────────────────────────────── */
+.fr-done-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: rgba(40, 200, 64, 0.12);
+  border: 2px solid rgba(40, 200, 64, 0.3);
+  color: #28c840;
+  font-size: 22px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

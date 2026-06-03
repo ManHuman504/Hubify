@@ -1,0 +1,226 @@
+.header-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.btn-primary {
+  padding: 7px 16px;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+
+.btn-primary:hover { background: var(--accent-hover); }
+
+.apps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 10px;
+}
+
+/* ── Search ────────────────────────────────────────────────────── */
+.home-search-row {
+  margin-top: 14px;
+}
+
+.home-search {
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.12s;
+  user-select: text;
+}
+
+.home-search:focus {
+  border-color: var(--accent);
+}
+
+.home-search::placeholder {
+  color: var(--text-muted);
+}
+
+/* ── Drag wrapper ──────────────────────────────────────────────── */
+.app-card-drag-wrap {
+  transition: opacity 0.12s, transform 0.12s;
+}
+
+.app-card-drag-wrap.dragging {
+  opacity: 0.35;
+  transform: scale(0.96);
+}
+
+/* ── Group tiles (wide rectangular chips) ──────────────────────── */
+.group-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.group-tile-wrap {
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+
+.group-tile-wrap.drag-over {
+  transform: scale(1.02);
+}
+
+.group-tile {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.1s, color 0.1s, border-color 0.12s, box-shadow 0.12s;
+}
+
+.group-tile:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.group-tile.active {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(124, 111, 255, 0.15);
+}
+
+.group-tile[data-drag-over="true"],
+.group-tile-wrap.drag-over .group-tile {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  box-shadow: 0 0 0 2px rgba(124, 111, 255, 0.25);
+}
+
+.group-tile-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-tile-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.group-tile-count {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-weight: 500;
+  transition: background 0.1s, color 0.1s;
+}
+
+.group-tile.active .group-tile-count {
+  background: rgba(124, 111, 255, 0.2);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.group-tile-del {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.1s, background 0.1s;
+}
+
+.group-tile-del:hover {
+  background: rgba(255, 95, 87, 0.15);
+  color: #ff5f57;
+}
+
+.group-tile-edit {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  user-select: text;
+}
+
+.group-tile-add {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.group-tile-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.group-tile-add span:first-child {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.group-tile-add-label {
+  font-size: 13px;
+}
+
+.group-tile-new-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  user-select: text;
+}

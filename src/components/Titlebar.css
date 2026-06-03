@@ -1,0 +1,46 @@
+.titlebar {
+  height: var(--titlebar-height);
+  display: flex;
+  align-items: center;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding-right: 8px;
+}
+
+.titlebar-drag {
+  flex: 1;
+  height: 100%;
+  cursor: default;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.titlebar-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.tb-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: filter 0.1s;
+}
+
+.tb-btn:hover { filter: brightness(1.2); }
+.tb-btn:active { filter: brightness(0.8); }
+
+.tb-btn.close    { background: #ff5f57; }
+.tb-btn.minimize { background: #febc2e; }
+.tb-btn.maximize { background: #28c840; }

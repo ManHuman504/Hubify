@@ -1,0 +1,264 @@
+use serde::{Deserialize, Serialize};
+use std::process::Command;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WingetPackage {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub source: String,
+}
+
+/// Check if winget is available on this system
+pub fn is_available() -> bool {
+    Command::new("winget")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Search winget for packages matching query
+pub fn search(query: &str) -> Vec<WingetPackage> {
+    let output = Command::new("winget")
+        .args(["search", query, "--accept-source-agreements", "--disable-interactivity"])
+        .output();
+
+    let output = match output {
+        Ok(o) => o,
+        Err(_) => return vec![],
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_winget_table(&stdout)
+}
+
+/// Get info about a specific package by id
+#[allow(dead_code)]
+pub fn show(id: &str) -> Option<WingetPackage> {
+    let output = Command::new("winget")
+        .args(["show", "--id", id, "--exact", "--accept-source-agreements"])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Parse name/version from show output
+    let mut name = id.to_string();
+    let mut version = String::new();
+
+    for line in stdout.lines() {
+        if let Some(v) = line.strip_prefix("Found ") {
+            // "Found AppName [id]"
+            if let Some(bracket) = v.find('[') {
+                name = v[..bracket].trim().to_string();
+            }
+        }
+        if line.trim_start().starts_with("Version:") {
+            version = line.split(':').nth(1).unwrap_or("").trim().to_string();
+        }
+    }
+
+    Some(WingetPackage {
+        id: id.to_string(),
+        name,
+        version,
+        source: "winget".to_string(),
+    })
+}
+
+/// Install a package, returns (success, log)
+pub fn install(id: &str) -> (bool, String) {
+    let output = Command::new("winget")
+        .args([
+            "install",
+            "--id", id,
+            "--exact",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+            "--silent",
+        ])
+        .output();
+
+    match output {
+        Ok(o) => {
+            let log = format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            );
+            (o.status.success(), log)
+        }
+        Err(e) => (false, e.to_string()),
+    }
+}
+
+/// Uninstall a package
+pub fn uninstall(id: &str) -> (bool, String) {
+    let output = Command::new("winget")
+        .args([
+            "uninstall",
+            "--id", id,
+            "--exact",
+            "--accept-source-agreements",
+            "--disable-interactivity",
+            "--silent",
+        ])
+        .output();
+
+    match output {
+        Ok(o) => {
+            let log = format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            );
+            (o.status.success(), log)
+        }
+        Err(e) => (false, e.to_string()),
+    }
+}
+
+/// List installed packages via winget
+pub fn list_installed() -> Vec<WingetPackage> {
+    let output = Command::new("winget")
+        .args(["list", "--accept-source-agreements", "--disable-interactivity"])
+        .output();
+
+    let output = match output {
+        Ok(o) => o,
+        Err(_) => return vec![],
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_winget_table(&stdout)
+}
+
+// ── Parser ───────────────────────────────────────────────────────────────────
+
+/// Parse winget tabular output (Name / Id / Version / Source columns)
+fn parse_winget_table(text: &str) -> Vec<WingetPackage> {
+    let mut results = Vec::new();
+    let lines: Vec<&str> = text.lines().collect();
+
+    // Find the header line — contains "Name" and "Id"
+    let header_idx = lines.iter().position(|l| {
+        let u = l.to_uppercase();
+        u.contains("NAME") && u.contains("ID")
+    });
+
+    let header_idx = match header_idx {
+        Some(i) => i,
+        None => return results,
+    };
+
+    // Find column offsets from the separator line (dashes)
+    let separator_idx = header_idx + 1;
+    if separator_idx >= lines.len() {
+        return results;
+    }
+
+    let sep = lines[separator_idx];
+    // Split by 2+ spaces to find column widths from separator
+    let col_positions = find_column_positions(lines[header_idx]);
+
+    for line in &lines[separator_idx + 1..] {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('-') {
+            continue;
+        }
+
+        let cols = extract_columns(line, &col_positions);
+        if cols.len() < 2 {
+            continue;
+        }
+
+        let name = cols[0].trim().to_string();
+        let id = cols[1].trim().to_string();
+        let version = cols.get(2).map(|s| s.trim().to_string()).unwrap_or_default();
+        let source = cols.get(3).map(|s| s.trim().to_string()).unwrap_or_else(|| "winget".to_string());
+
+        if name.is_empty() || id.is_empty() {
+            continue;
+        }
+        // Skip lines that look like progress/status output
+        if name.starts_with('[') || id.contains("…") {
+            continue;
+        }
+
+        results.push(WingetPackage { id, name, version, source });
+    }
+
+    let _ = sep; // suppress unused warning
+    results
+}
+
+fn find_column_positions(header: &str) -> Vec<usize> {
+    // Find start positions of each column by locating runs of non-space then space
+    let bytes = header.as_bytes();
+    let mut positions = vec![0usize];
+    let mut in_word = false;
+    for (i, &b) in bytes.iter().enumerate() {
+        let is_space = b == b' ';
+        if !is_space && !in_word {
+            if i > 0 { positions.push(i); }
+            in_word = true;
+        } else if is_space {
+            in_word = false;
+        }
+    }
+    // Deduplicate and keep only meaningful column starts
+    // Use 2-space gap as column separator heuristic
+    let mut col_starts = vec![0usize];
+    let chars: Vec<char> = header.chars().collect();
+    let mut i = 1usize;
+    while i < chars.len() {
+        if chars[i] == ' ' && i + 1 < chars.len() && chars[i + 1] != ' ' {
+            // Check if there are 2+ spaces before this word
+            let prev = if i >= 2 { chars[i - 1] == ' ' || chars[i] == ' ' } else { false };
+            let _ = prev;
+            col_starts.push(i + 1);
+        }
+        i += 1;
+    }
+
+    // Simpler: just find positions where 2+ spaces occur
+    let mut starts = vec![0usize];
+    let h = header;
+    let mut j = 0;
+    while j < h.len() {
+        if h[j..].starts_with("  ") {
+            // skip spaces
+            let end = h[j..].find(|c: char| c != ' ').map(|k| j + k).unwrap_or(h.len());
+            if end < h.len() {
+                starts.push(end);
+            }
+            j = end;
+        } else {
+            j += 1;
+        }
+    }
+    starts.dedup();
+    starts
+}
+
+fn extract_columns(line: &str, positions: &[usize]) -> Vec<String> {
+    let mut cols = Vec::new();
+    let chars: Vec<char> = line.chars().collect();
+    let total = chars.len();
+
+    for (idx, &start) in positions.iter().enumerate() {
+        let end = if idx + 1 < positions.len() {
+            positions[idx + 1].min(total)
+        } else {
+            total
+        };
+        if start <= total {
+            let col: String = chars[start.min(total)..end].iter().collect();
+            cols.push(col);
+        } else {
+            cols.push(String::new());
+        }
+    }
+    cols
+}

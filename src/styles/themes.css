@@ -1,0 +1,50 @@
+:root {
+  color-scheme: dark;
+}
+
+[data-theme="dark"] {
+  /* Полупрозрачные фоны — Mica/Acrylic просвечивает снизу */
+  --bg-base:     rgba(18, 18, 20, 0.0);
+  --bg-surface:  rgba(28, 28, 32, 0.55);
+  --bg-elevated: rgba(36, 36, 42, 0.65);
+  --bg-hover:    rgba(255, 255, 255, 0.05);
+
+  --border:        rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+
+  --text-primary:   rgba(240, 240, 244, 0.95);
+  --text-secondary: rgba(160, 160, 174, 0.85);
+  --text-muted:     rgba(100, 100, 114, 0.7);
+
+  --accent:        #7c6fff;
+  --accent-hover:  #8f84ff;
+  --accent-subtle: rgba(124, 111, 255, 0.14);
+
+  --nav-width: 210px;
+  --radius:    8px;
+  --radius-sm: 5px;
+  --titlebar-height: 36px;
+}
+
+[data-theme="light"] {
+  --bg-base:     rgba(245, 245, 248, 0.0);
+  --bg-surface:  rgba(255, 255, 255, 0.55);
+  --bg-elevated: rgba(252, 252, 255, 0.65);
+  --bg-hover:    rgba(0, 0, 0, 0.04);
+
+  --border:        rgba(0, 0, 0, 0.07);
+  --border-subtle: rgba(0, 0, 0, 0.04);
+
+  --text-primary:   rgba(20, 20, 26, 0.95);
+  --text-secondary: rgba(80, 80, 96, 0.85);
+  --text-muted:     rgba(140, 140, 158, 0.75);
+
+  --accent:        #6c63ff;
+  --accent-hover:  #5a52e0;
+  --accent-subtle: rgba(108, 99, 255, 0.1);
+
+  --nav-width: 210px;
+  --radius:    8px;
+  --radius-sm: 5px;
+  --titlebar-height: 36px;
+}

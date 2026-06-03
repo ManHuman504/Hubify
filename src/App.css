@@ -1,0 +1,53 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-base);
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  /* Subtle border for frameless window */
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  padding-top: var(--titlebar-height);
+  overflow: hidden;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Loading splash ────────────────────────────────────────────── */
+.app-splash {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-splash-mark {
+  width: 48px;
+  height: 48px;
+  background: var(--accent);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  color: #fff;
+  animation: splash-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes splash-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(0.95); }
+  50% { opacity: 1; transform: scale(1); }
+}
