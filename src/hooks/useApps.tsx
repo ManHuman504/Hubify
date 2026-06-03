@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, createContext, useContext, ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 
 export interface App {
@@ -18,6 +18,7 @@ export interface Group {
 export interface StoreData {
   apps: App[]
   groups: Group[]
+  scanned_apps: DetectedApp[]
 }
 
 export interface ProcessInfo {
@@ -33,9 +34,28 @@ export interface DetectedApp {
   icon: string | null
 }
 
-export function useApps() {
+interface AppsContextType {
+  apps: App[]
+  groups: Group[]
+  scannedApps: DetectedApp[]
+  processInfo: Record<string, ProcessInfo>
+  addApp: (path: string, name?: string, groupId?: string | null) => Promise<void>
+  removeApp: (id: string) => Promise<void>
+  launchApp: (path: string) => Promise<void>
+  killApp: (path: string) => Promise<void>
+  moveAppToGroup: (appId: string, groupId: string | null) => Promise<void>
+  addGroup: (name: string, color?: string) => Promise<Group>
+  removeGroup: (id: string) => Promise<void>
+  renameGroup: (id: string, name: string) => Promise<void>
+  refresh: () => Promise<void>
+}
+
+const AppsContext = createContext<AppsContextType | null>(null)
+
+export function AppsProvider({ children }: { children: ReactNode }) {
   const [apps, setApps] = useState<App[]>([])
   const [groups, setGroups] = useState<Group[]>([])
+  const [scannedApps, setScannedApps] = useState<DetectedApp[]>([])
   const [processInfo, setProcessInfo] = useState<Record<string, ProcessInfo>>({})
   const appsRef = useRef<App[]>([])
   appsRef.current = apps
@@ -44,23 +64,56 @@ export function useApps() {
     const data = await invoke<StoreData>('get_store')
     setApps(data.apps)
     setGroups(data.groups)
+    setScannedApps(data.scanned_apps || [])
   }, [])
 
   useEffect(() => { refresh() }, [refresh])
 
-  // Poll process status every 3s
+  useEffect(() => {
+    // Listen for backend updates (like after winget_install)
+    const unlisten = (async () => {
+      const { listen } = await import('@tauri-apps/api/event')
+      return listen('store_updated', () => {
+        refresh()
+      })
+    })()
+    
+    return () => {
+      unlisten.then(f => f())
+    }
+  }, [refresh])
+
+  // Poll process status every 1s
   useEffect(() => {
     const poll = async () => {
       const current = appsRef.current
       if (!current.length) return
-      const results = await Promise.all(
-        current.map(a => invoke<ProcessInfo>('get_process_info', { path: a.path })
-          .then(info => [a.id, info] as const))
-      )
-      setProcessInfo(Object.fromEntries(results))
+      
+      try {
+        const paths = current.map(a => a.path)
+        const infoObj = await invoke<Record<string, ProcessInfo>>('get_processes_info', { paths })
+        
+        const newProcessInfo: Record<string, ProcessInfo> = {}
+        for (const app of current) {
+          if (infoObj[app.path]) {
+            newProcessInfo[app.id] = infoObj[app.path]
+          }
+        }
+        
+        setProcessInfo(newProcessInfo)
+
+        // Update native tray context menu
+        const activeApps = current
+          .filter(a => newProcessInfo[a.id]?.running)
+          .map(a => ({ name: a.name, path: a.path }))
+        
+        invoke('update_tray_menu', { activeApps }).catch(() => {})
+      } catch (e) {
+         console.error('Failed to poll process info', e)
+      }
     }
     poll()
-    const id = setInterval(poll, 3000)
+    const id = setInterval(poll, 1000)
     return () => clearInterval(id)
   }, [])
 
@@ -108,17 +161,29 @@ export function useApps() {
     setGroups(prev => prev.map(g => g.id === id ? { ...g, name } : g))
   }, [])
 
-  return {
-    apps,
-    groups,
-    processInfo,
-    addApp,
-    removeApp,
-    launchApp,
-    killApp,
-    moveAppToGroup,
-    addGroup,
-    removeGroup,
-    renameGroup,
-  }
+  return (
+    <AppsContext.Provider value={{
+      apps,
+      groups,
+      scannedApps,
+      processInfo,
+      addApp,
+      removeApp,
+      launchApp,
+      killApp,
+      moveAppToGroup,
+      addGroup,
+      removeGroup,
+      renameGroup,
+      refresh,
+    }}>
+      {children}
+    </AppsContext.Provider>
+  )
+}
+
+export function useApps() {
+  const ctx = useContext(AppsContext)
+  if (!ctx) throw new Error('useApps must be used within AppsProvider')
+  return ctx
 }

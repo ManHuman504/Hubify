@@ -9,6 +9,18 @@ pub struct WingetPackage {
     pub source: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WingetPackageDetail {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub source: String,
+    pub description: Option<String>,
+    pub homepage: Option<String>,
+    pub publisher: Option<String>,
+    pub tags: Vec<String>,
+}
+
 /// Check if winget is available on this system
 pub fn is_available() -> bool {
     Command::new("winget")
@@ -18,51 +30,64 @@ pub fn is_available() -> bool {
         .unwrap_or(false)
 }
 
-/// Search winget for packages matching query
-pub fn search(query: &str) -> Vec<WingetPackage> {
-    let output = Command::new("winget")
-        .args(["search", query, "--accept-source-agreements", "--disable-interactivity"])
-        .output();
-
-    let output = match output {
-        Ok(o) => o,
-        Err(_) => return vec![],
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_winget_table(&stdout)
-}
-
 /// Get info about a specific package by id
 #[allow(dead_code)]
-pub fn show(id: &str) -> Option<WingetPackage> {
+pub fn show(id: &str) -> Option<WingetPackageDetail> {
     let output = Command::new("winget")
-        .args(["show", "--id", id, "--exact", "--accept-source-agreements"])
+        .args(["show", "--id", id, "--exact", "--accept-source-agreements", "--disable-interactivity"])
         .output()
         .ok()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // Parse name/version from show output
+    
     let mut name = id.to_string();
     let mut version = String::new();
+    let mut description = String::new();
+    let mut homepage = None;
+    let mut publisher = None;
+    let mut tags = Vec::new();
+    
+    let mut in_desc = false;
+    let mut in_tags = false;
 
     for line in stdout.lines() {
         if let Some(v) = line.strip_prefix("Found ") {
-            // "Found AppName [id]"
             if let Some(bracket) = v.find('[') {
                 name = v[..bracket].trim().to_string();
             }
         }
-        if line.trim_start().starts_with("Version:") {
-            version = line.split(':').nth(1).unwrap_or("").trim().to_string();
+        
+        let trimmed = line.trim();
+        
+        if line.starts_with("Version:") { version = line.split(':').nth(1).unwrap_or("").trim().to_string(); }
+        else if line.starts_with("Homepage:") { homepage = Some(line.splitn(2, ':').nth(1).unwrap_or("").trim().to_string()); }
+        else if line.starts_with("Publisher:") { publisher = Some(line.splitn(2, ':').nth(1).unwrap_or("").trim().to_string()); }
+        else if line.starts_with("Description:") {
+            in_desc = true;
+            in_tags = false;
+        } else if line.starts_with("Tags:") {
+            in_tags = true;
+            in_desc = false;
+        } else if !line.starts_with(' ') && !line.is_empty() && line.contains(':') {
+            in_desc = false;
+            in_tags = false;
+        } else if in_desc && line.starts_with("  ") {
+            description.push_str(trimmed);
+            description.push(' ');
+        } else if in_tags && line.starts_with("  ") && !trimmed.is_empty() {
+            tags.push(trimmed.to_string());
         }
     }
 
-    Some(WingetPackage {
+    Some(WingetPackageDetail {
         id: id.to_string(),
         name,
         version,
         source: "winget".to_string(),
+        description: if description.is_empty() { None } else { Some(description.trim().to_string()) },
+        homepage,
+        publisher,
+        tags,
     })
 }
 

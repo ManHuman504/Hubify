@@ -17,86 +17,24 @@
   font-family: inherit;
   outline: none;
   transition: border-color 0.12s;
-  user-select: text;
 }
 
 .library-search:focus { border-color: var(--accent); }
-.library-search::placeholder { color: var(--text-muted); }
 
-.library-count {
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-/* ── Progress bar ──────────────────────────────────────────────── */
-.lib-progress-wrap {
-  margin-top: 12px;
-  position: relative;
-  height: 4px;
-  background: var(--bg-elevated);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.lib-progress-bar {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 2px;
-  transition: width 0.18s ease-out;
-}
-
-.lib-progress-label {
-  position: absolute;
-  top: 8px;
-  left: 0;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-/* ── Spinner ───────────────────────────────────────────────────── */
-.library-spinner {
-  display: block;
-  width: 30px;
-  height: 30px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  margin-bottom: 10px;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── Grid (same style as AppCard) ──────────────────────────────── */
+/* ── Grid ──────────────────────────────────────────────────────── */
 .lib-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 10px;
-  overflow-y: auto;
-  flex: 1;
+  /* Class .hub-grid is applied in the React component */
+  --grid-size: 110px;
 }
 
 .lib-card {
-  position: relative;
-  aspect-ratio: 1;
-  border-radius: var(--radius);
-  overflow: hidden;
-  cursor: pointer;
-  user-select: none;
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  transition: border-color 0.15s, transform 0.12s;
-}
-
-.lib-card:hover:not(.lib-card-added) {
-  border-color: var(--accent);
-  transform: scale(1.03);
+  /* Class .hub-card-base is applied in the React component */
 }
 
 .lib-card-added {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: default;
+  filter: grayscale(1);
 }
 
 .lib-card-icon {
@@ -105,14 +43,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 18%;
+  padding: 20%;
 }
 
 .lib-card-icon img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  image-rendering: -webkit-optimize-contrast;
 }
 
 .lib-card-fallback {
@@ -121,7 +58,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(18px, 9cqh, 36px);
+  font-size: 24px;
   font-weight: 700;
   color: var(--accent);
   background: var(--accent-subtle);
@@ -129,49 +66,10 @@
   text-transform: uppercase;
 }
 
-/* Hover overlay with name */
-.lib-card-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 9px;
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.62) 0%,
-    rgba(0, 0, 0, 0.15) 50%,
-    transparent 100%
-  );
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.lib-card:hover .lib-card-overlay {
-  opacity: 1;
-}
-
-.lib-card-added .lib-card-overlay {
-  opacity: 1;
-  background: linear-gradient(to top, rgba(0,0,0,0.3), transparent);
-}
-
-.lib-card-name {
-  font-size: 10px;
-  font-weight: 500;
-  color: #fff;
-  text-align: center;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 88%;
-  text-shadow: 0 1px 4px rgba(0,0,0,0.8);
-}
-
 .lib-card-added-badge {
   position: absolute;
-  top: 7px;
-  right: 7px;
+  top: 8px;
+  right: 8px;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -182,6 +80,7 @@
   align-items: center;
   justify-content: center;
   font-weight: 700;
+  box-shadow: 0 0 6px rgba(40, 200, 64, 0.4);
 }
 
 /* ── Group picker modal ────────────────────────────────────────── */
@@ -189,6 +88,7 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -205,70 +105,5 @@
   flex-direction: column;
   align-items: center;
   gap: 14px;
-}
-
-.lib-picker-icon {
-  width: 56px;
-  height: 56px;
-}
-
-.lib-picker-icon img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.lib-picker-icon span {
-  display: flex;
-  width: 56px;
-  height: 56px;
-  border-radius: 12px;
-  background: var(--accent-subtle);
-  color: var(--accent);
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 24px;
-  text-transform: uppercase;
-}
-
-.lib-picker-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  text-align: center;
-}
-
-.lib-picker-field {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.lib-picker-field label {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.lib-picker-select {
-  width: 100%;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text-primary);
-  font-size: 13px;
-  padding: 7px 10px;
-  outline: none;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.lib-picker-select:focus { border-color: var(--accent); }
-
-.lib-picker-footer {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-  justify-content: flex-end;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.3);
 }

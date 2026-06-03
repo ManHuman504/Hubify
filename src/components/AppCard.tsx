@@ -35,10 +35,8 @@ export default function AppCard({ app, info, onSelect, onLaunch, onKill, onRemov
         onContextMenu={handleContextMenu}
         onClick={onSelect}
       >
-        {/* Running indicator */}
-        {running && <span className="app-card-running-dot" />}
+        {running && <div className="app-card-indicator" />}
 
-        {/* Icon fills the full card */}
         <div className="app-card-icon">
           {app.icon
             ? <img src={app.icon} alt={app.name} draggable={false} />
@@ -46,7 +44,6 @@ export default function AppCard({ app, info, onSelect, onLaunch, onKill, onRemov
           }
         </div>
 
-        {/* Name overlay on hover */}
         <div className="app-card-overlay">
           <p className="app-card-name">{app.name}</p>
         </div>

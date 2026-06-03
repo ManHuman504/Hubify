@@ -1,16 +1,11 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useApps } from '../hooks/useApps'
 import type { DetectedApp, Group } from '../hooks/useApps'
 import { layoutAwareMatch } from '../utils/keyboard'
+import { useGlobalSearchFocus } from '../hooks/useGlobalSearchFocus'
 import './Page.css'
 import './Library.css'
-
-const STORAGE_KEY = 'hubify_scanned'
-
-interface LibraryProps {
-  onScannedChange?: (list: DetectedApp[]) => void
-}
 
 interface GroupPickerProps {
   groups: Group[]
@@ -69,29 +64,17 @@ function GroupPicker({ groups, app, addedPaths, onAdd, onClose }: GroupPickerPro
   )
 }
 
-export default function Library({ onScannedChange }: LibraryProps) {
-  const { apps, groups, addApp } = useApps()
+export default function Library() {
+  const { apps, groups, scannedApps, addApp, refresh } = useApps()
   const addedPaths = new Set(apps.map(a => a.path.toLowerCase()))
-
-  const [detected, setDetected] = useState<DetectedApp[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : []
-    } catch { return [] }
-  })
 
   const [loading, setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
   const [search, setSearch] = useState('')
   const [picking, setPicking] = useState<DetectedApp | null>(null)
 
-  // Persist to localStorage and notify parent
-  useEffect(() => {
-    if (detected.length > 0) {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(detected)) } catch {}
-    }
-    onScannedChange?.(detected)
-  }, [detected])
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  useGlobalSearchFocus(searchInputRef as React.RefObject<HTMLInputElement>)
 
   const scan = useCallback(async () => {
     setLoading(true)
@@ -106,22 +89,22 @@ export default function Library({ onScannedChange }: LibraryProps) {
     }, 180)
 
     try {
-      const list = await invoke<DetectedApp[]>('scan_installed_apps')
+      await invoke('scan_installed_apps')
+      await refresh() // Refetch from store
       clearInterval(timer)
       setProgress(100)
-      setDetected(list)
     } catch {
       clearInterval(timer)
     } finally {
       setTimeout(() => { setLoading(false); setProgress(0) }, 400)
     }
-  }, [])
+  }, [refresh])
 
   const handleAdd = async (det: DetectedApp, groupId: string | null) => {
     await addApp(det.path, det.name, groupId)
   }
 
-  const filtered = detected.filter(d => layoutAwareMatch(d.name, search))
+  const filtered = scannedApps.filter(d => layoutAwareMatch(d.name, search))
 
   return (
     <div className="page">
@@ -130,13 +113,13 @@ export default function Library({ onScannedChange }: LibraryProps) {
           <div>
             <h1 className="page-title">Library</h1>
             <p className="page-subtitle">
-              {detected.length > 0
-                ? `${detected.length} programs found`
+              {scannedApps.length > 0
+                ? `${scannedApps.length} programs found`
                 : 'Auto-detect installed programs'}
             </p>
           </div>
           <button className="btn-primary" onClick={scan} disabled={loading}>
-            {loading ? 'Scanning…' : detected.length > 0 ? '⟳ Rescan' : '⟳ Scan'}
+            {loading ? 'Scanning…' : scannedApps.length > 0 ? '⟳ Rescan' : '⟳ Scan'}
           </button>
         </div>
 
@@ -151,23 +134,24 @@ export default function Library({ onScannedChange }: LibraryProps) {
         )}
 
         {/* Search */}
-        {detected.length > 0 && !loading && (
+        {scannedApps.length > 0 && !loading && (
           <div className="library-search-row">
             <input
+              ref={searchInputRef}
               className="library-search"
               placeholder="Search programs…"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
             <span className="library-count">
-              {search ? `${filtered.length} of ${detected.length}` : `${detected.length} found`}
+              {search ? `${filtered.length} of ${scannedApps.length}` : `${scannedApps.length} found`}
             </span>
           </div>
         )}
       </div>
 
       {/* Empty state */}
-      {detected.length === 0 && !loading && (
+      {scannedApps.length === 0 && !loading && (
         <div className="page-empty">
           <span className="empty-icon">⊞</span>
           <p>Click "Scan" to find installed programs</p>
@@ -176,7 +160,7 @@ export default function Library({ onScannedChange }: LibraryProps) {
       )}
 
       {/* Scanning placeholder */}
-      {loading && detected.length === 0 && (
+      {loading && scannedApps.length === 0 && (
         <div className="page-empty">
           <span className="library-spinner" />
           <p>Scanning registry…</p>
@@ -186,7 +170,7 @@ export default function Library({ onScannedChange }: LibraryProps) {
 
       {/* Grid */}
       {!loading && filtered.length > 0 && (
-        <div className="lib-grid">
+        <div className="lib-grid hub-grid">
           {filtered.map(det => {
             const key = det.path.toLowerCase()
             const isAdded = addedPaths.has(key)
@@ -194,7 +178,7 @@ export default function Library({ onScannedChange }: LibraryProps) {
             return (
               <div
                 key={det.path}
-                className={`lib-card ${isAdded ? 'lib-card-added' : ''}`}
+                className={`lib-card hub-card-base ${isAdded ? 'lib-card-added' : ''}`}
                 onClick={() => !isAdded && setPicking(det)}
                 title={isAdded ? 'Already in your hub' : `Click to add ${det.name}`}
               >

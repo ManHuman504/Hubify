@@ -1,22 +1,21 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useApps } from '../hooks/useApps'
-import type { App, Group, DetectedApp } from '../hooks/useApps'
+import type { App, Group } from '../hooks/useApps'
 import AppCard from '../components/AppCard'
 import AppDetail from '../components/AppDetail'
 import AddAppDialog from '../components/AddAppDialog'
 import { layoutAwareMatch } from '../utils/keyboard'
+import { useGlobalSearchFocus } from '../hooks/useGlobalSearchFocus'
 import './Page.css'
 import './Home.css'
 
-interface HomeProps {
-  scanned?: DetectedApp[]
-}
-
 type FilterId = 'all' | string
+type LayoutType = 'grid' | 'rect' | 'list'
+type SizeType = 'small' | 'medium' | 'large'
 
-export default function Home({ scanned = [] }: HomeProps) {
+export default function Home() {
   const {
-    apps, groups, processInfo,
+    apps, groups, processInfo, scannedApps,
     addApp, removeApp, launchApp, killApp,
     moveAppToGroup, addGroup, removeGroup, renameGroup,
   } = useApps()
@@ -31,6 +30,21 @@ export default function Home({ scanned = [] }: HomeProps) {
   const [editingName, setEditingName] = useState('')
   const [showGroupInput, setShowGroupInput] = useState(false)
   const [newGroupName, setNewGroupName] = useState('')
+  
+  // Layout Options
+  const [layout, setLayout] = useState<LayoutType>(() => (localStorage.getItem('hubify_layout') as LayoutType) || 'grid')
+  const [size, setSize] = useState<SizeType>(() => (localStorage.getItem('hubify_size') as SizeType) || 'medium')
+
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  useGlobalSearchFocus(searchInputRef as React.RefObject<HTMLInputElement>)
+
+  useEffect(() => {
+    localStorage.setItem('hubify_layout', layout)
+  }, [layout])
+
+  useEffect(() => {
+    localStorage.setItem('hubify_size', size)
+  }, [size])
 
   if (selected) {
     return (
@@ -86,7 +100,6 @@ export default function Home({ scanned = [] }: HomeProps) {
     setEditingGroupId(null)
   }
 
-  // Count apps per group for badge
   const countForGroup = (gid: string) => apps.filter(a => a.group_id === gid).length
 
   return (
@@ -97,12 +110,29 @@ export default function Home({ scanned = [] }: HomeProps) {
             <h1 className="page-title">Home</h1>
             <p className="page-subtitle">{apps.length} app{apps.length !== 1 ? 's' : ''}</p>
           </div>
-          <button className="btn-primary" onClick={() => setShowDialog(true)}>+ Add</button>
+          
+          <div className="home-header-actions">
+             {/* Layout Controls */}
+             <div className="layout-controls">
+                <div className="layout-group">
+                   <button className={`layout-btn ${layout === 'grid' ? 'active' : ''}`} onClick={() => setLayout('grid')} title="Grid">⊞</button>
+                   <button className={`layout-btn ${layout === 'rect' ? 'active' : ''}`} onClick={() => setLayout('rect')} title="Cards">⊟</button>
+                   <button className={`layout-btn ${layout === 'list' ? 'active' : ''}`} onClick={() => setLayout('list')} title="List">☰</button>
+                </div>
+                <div className="layout-group">
+                   <button className={`layout-btn ${size === 'small' ? 'active' : ''}`} onClick={() => setSize('small')} title="Small">S</button>
+                   <button className={`layout-btn ${size === 'medium' ? 'active' : ''}`} onClick={() => setSize('medium')} title="Medium">M</button>
+                   <button className={`layout-btn ${size === 'large' ? 'active' : ''}`} onClick={() => setSize('large')} title="Large">L</button>
+                </div>
+             </div>
+            <button className="btn-primary" onClick={() => setShowDialog(true)}>+ Add</button>
+          </div>
         </div>
 
         {/* Search */}
         <div className="home-search-row">
           <input
+            ref={searchInputRef}
             className="home-search"
             placeholder="Search apps…"
             value={search}
@@ -189,7 +219,7 @@ export default function Home({ scanned = [] }: HomeProps) {
         </div>
       </div>
 
-      {/* Grid */}
+      {/* Grid/List */}
       {apps.length === 0 ? (
         <div className="page-empty">
           <span className="empty-icon">⬡</span>
@@ -203,14 +233,14 @@ export default function Home({ scanned = [] }: HomeProps) {
           <p className="empty-hint">{search ? 'Try a different query' : 'Drag apps here or use "+ Add"'}</p>
         </div>
       ) : (
-        <div className="apps-grid">
+        <div className={`apps-view layout-${layout} size-${size} ${layout === 'grid' ? 'hub-grid' : ''}`}>
           {visibleApps.map(app => (
             <div
               key={app.id}
               draggable
               onDragStart={e => handleDragStart(e, app.id)}
               onDragEnd={handleDragEnd}
-              className={`app-card-drag-wrap ${draggingId === app.id ? 'dragging' : ''}`}
+              className={`app-card-drag-wrap ${draggingId === app.id ? 'dragging' : ''} ${layout !== 'list' ? 'hub-card-base' : ''}`}
             >
               <AppCard
                 app={app}
@@ -228,7 +258,7 @@ export default function Home({ scanned = [] }: HomeProps) {
       {showDialog && (
         <AddAppDialog
           groups={groups}
-          scanned={scanned}
+          scanned={scannedApps}
           onAdd={(path, name, groupId) => addApp(path, name, groupId)}
           onClose={() => setShowDialog(false)}
         />

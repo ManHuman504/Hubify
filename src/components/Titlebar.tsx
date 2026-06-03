@@ -6,7 +6,13 @@ const win = getCurrentWindow()
 export default function Titlebar() {
   return (
     <div className="titlebar" data-tauri-drag-region>
+      <div className="titlebar-logo" data-tauri-drag-region>
+        <div className="logo-mark">H</div>
+        <span className="logo-text">Hubify</span>
+      </div>
+      
       <div className="titlebar-drag" data-tauri-drag-region />
+      
       <div className="titlebar-controls">
         <button className="tb-btn minimize" onClick={() => win.minimize()} title="Minimize">
           <span />

@@ -9,7 +9,7 @@ html, body {
 }
 
 body {
-  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Onest', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.5;
@@ -23,4 +23,36 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+/* ── Bulletproof Grid System ────────────────────────────────── */
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--grid-size, 110px), 1fr));
+  grid-auto-rows: 1fr; /* Force all rows to have equal height based on the first item */
+  gap: 20px;
+  align-content: start;
+  padding-bottom: 30px;
+}
+
+/* Base card styling to prevent collapsing */
+.hub-card-base {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  min-height: var(--grid-size, 110px);
+  max-height: var(--grid-size, 110px); /* Strict height enforcement */
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  transition: all 0.15s ease-out;
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hub-card-base:hover {
+  border-color: var(--accent);
+  transform: scale(1.02);
+  z-index: 10;
 }

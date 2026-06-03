@@ -10,7 +10,6 @@ pub fn extract_icon(exe_path: &str) -> Option<String> {
         CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
         BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, SelectObject,
     };
-    use windows::core::Interface;
     use base64::Engine;
 
     unsafe {

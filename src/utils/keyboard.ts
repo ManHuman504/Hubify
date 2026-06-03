@@ -29,8 +29,28 @@ const RU_TO_EN: Record<string, string> = Object.fromEntries(
 const CYR_TO_LAT: Record<string, string> = {
   а:'a', б:'b', в:'v', г:'g', д:'d', е:'e', ё:'yo', ж:'zh', з:'z',
   и:'i', й:'y', к:'k', л:'l', м:'m', н:'n', о:'o', п:'p', р:'r',
-  с:'s', т:'t', у:'u', ф:'f', х:'kh', ц:'ts', ч:'ch', ш:'sh', щ:'sch',
-  ъ:'', ы:'y', ь:'', э:'e', ю:'yu', я:'ya',
+  с:'s', т:'t', у:'u', ф:'f', х:'h', ц:'c', ч:'ch', ш:'sh', щ:'sh',
+  ъ:'', ы:'y', ь:'', э:'e', ю:'u', я:'ya',
+}
+
+// Map common Russian phonetic spellings of English apps to their actual names
+const PHONETIC_OVERRIDES: Record<string, string> = {
+  'телеграм': 'telegram',
+  'дискорд': 'discord',
+  'стим': 'steam',
+  'хром': 'chrome',
+  'яндекс': 'yandex',
+  'скайп': 'skype',
+  'зум': 'zoom',
+  'обобс': 'obs',
+  'обс': 'obs',
+  'едж': 'edge',
+  'эдж': 'edge',
+  'опера': 'opera',
+  'вичат': 'wechat',
+  'нотпад': 'notepad',
+  'влц': 'vlc',
+  'вк': 'vk',
 }
 
 function transliterate(str: string, map: Record<string, string>): string {
@@ -43,12 +63,12 @@ export function cyrToLat(str: string): string {
 
 /** Convert a string typed on EN layout as if it were typed on RU layout */
 export function enAsRu(str: string): string {
-  return transliterate(str, EN_TO_RU)
+  return transliterate(str.toLowerCase(), EN_TO_RU)
 }
 
 /** Convert a string typed on RU layout as if it were typed on EN layout */
 export function ruAsEn(str: string): string {
-  return transliterate(str, RU_TO_EN)
+  return transliterate(str.toLowerCase(), RU_TO_EN)
 }
 
 /**
@@ -60,11 +80,25 @@ export function layoutAwareMatch(target: string, query: string): boolean {
   const t = target.toLowerCase()
   const q = query.toLowerCase()
 
-  return (
-    t.includes(q) ||
-    t.includes(enAsRu(q)) ||
-    t.includes(ruAsEn(q)) ||
-    cyrToLat(t).includes(q) ||
-    cyrToLat(t).includes(cyrToLat(q))
-  )
+  // 1. Direct match
+  if (t.includes(q)) return true
+  
+  // 2. User forgot to switch from EN to RU
+  if (t.includes(enAsRu(q))) return true
+  
+  // 3. User forgot to switch from RU to EN
+  if (t.includes(ruAsEn(q))) return true
+
+  // 4. Phonetic / Transliteration Match
+  const latT = cyrToLat(t)
+  const latQ = cyrToLat(q)
+  if (latT.includes(latQ)) return true
+
+  // 5. Phonetic Overrides (e.g. typing "Телеграм" finds "Telegram")
+  for (const [ruPhonetic, enReal] of Object.entries(PHONETIC_OVERRIDES)) {
+    if (q.includes(ruPhonetic) && t.includes(enReal)) return true
+    if (t.includes(ruPhonetic) && q.includes(enReal)) return true
+  }
+
+  return false
 }
