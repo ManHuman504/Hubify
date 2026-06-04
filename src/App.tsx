@@ -16,6 +16,7 @@ import Settings from './pages/Settings'
 import FirstRun from './pages/FirstRun'
 import ThemeEngine from './components/ThemeEngine'
 import GuardianPopup from './pages/GuardianPopup'
+import UpdateModal, { type UpdateInfo } from './components/UpdateModal'
 import { AppsProvider } from './hooks/useApps'
 
 export type Page = 'home' | 'library' | 'store' | 'tools' | 'tray' | 'analytics' | 'sync' | 'settings'
@@ -36,19 +37,27 @@ function MainApp() {
   }
 
   const [setupDone, setSetupDone] = useState<boolean | null>(null)
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
 
   useEffect(() => {
     invoke<SetupStatus>('get_setup_status')
       .then(s => { setSetupDone(s.completed) })
       .catch(() => { setSetupDone(true) })
 
-    const unlisten = listen('show_window', async () => {
+    const unlisten1 = listen('show_window', async () => {
       const win = getCurrentWindow()
       await win.show()
       await win.setFocus()
     })
 
-    return () => { unlisten.then(f => f()) }
+    const unlisten2 = listen<UpdateInfo>('update_available', (event) => {
+      setUpdateInfo(event.payload)
+    })
+
+    return () => {
+      unlisten1.then(f => f())
+      unlisten2.then(f => f())
+    }
   }, [])
 
   const handleSetupComplete = () => setSetupDone(true)
@@ -102,6 +111,13 @@ function MainApp() {
           </main>
         </div>
       </div>
+      {updateInfo && (
+        <UpdateModal
+          info={updateInfo}
+          onClose={() => setUpdateInfo(null)}
+          onUpdateInstalled={() => {}}
+        />
+      )}
     </AppsProvider>
   )
 }

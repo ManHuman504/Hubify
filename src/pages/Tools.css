@@ -306,3 +306,265 @@
   border-radius: 2px;
   transition: width 0.3s;
 }
+
+/* ── Disk Map ──────────────────────────────────────────────── */
+
+.diskmap-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.diskmap-drive-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diskmap-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.diskmap-drives {
+  display: flex;
+  gap: 4px;
+}
+
+.diskmap-drive-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.12s;
+}
+
+.diskmap-drive-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.diskmap-drive-btn.active {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.diskmap-drive-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.diskmap-drive-btn.hidden {
+  display: none;
+}
+
+.diskmap-results {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diskmap-total {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.diskmap-total-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.diskmap-total-size {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: monospace;
+}
+
+.diskmap-total-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.diskmap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: calc(100vh - 320px);
+  overflow-y: auto;
+}
+
+.diskmap-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.diskmap-row-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--accent-subtle);
+  opacity: 0.3;
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  min-width: 2px;
+}
+
+.diskmap-row-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  z-index: 1;
+}
+
+.diskmap-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diskmap-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 1px;
+}
+
+.diskmap-row-size {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  font-family: monospace;
+}
+
+.diskmap-row-files {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.diskmap-row-pct {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.diskmap-delete-btn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  opacity: 0.5;
+  z-index: 1;
+  transition: opacity 0.12s;
+}
+
+.diskmap-delete-btn:hover {
+  opacity: 1;
+  background: rgba(255, 95, 87, 0.1);
+}
+
+.diskmap-delete-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.1s;
+}
+
+.btn-secondary:hover {
+  border-color: var(--text-muted);
+}
+
+.btn-danger {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  background: #ff5f57;
+  color: #fff;
+  border: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.1s;
+}
+
+.btn-danger:hover {
+  background: #ff4444;
+}
+
+.diskmap-info-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: monospace;
+  margin-left: auto;
+}
+
+.diskmap-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.diskmap-breadcrumb-item {
+  font-size: 12px;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.diskmap-breadcrumb-item:hover {
+  background: var(--accent-subtle);
+}
+
+.diskmap-breadcrumb-sep {
+  color: var(--text-muted);
+  margin: 0 3px;
+  font-size: 14px;
+}

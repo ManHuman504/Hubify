@@ -13,6 +13,8 @@ mod uninstaller;
 mod everything;
 mod keybinds;
 mod guardian;
+mod diskmap;
+mod updater;
 
 use store::{App, Group, Store, CustomTheme};
 use db::{DailyActivity, AppStat, TodaySummary};
@@ -55,152 +57,189 @@ async fn everything_search_apps(query: String, limit: usize) -> Result<Vec<every
 }
 
 #[tauri::command]
-fn is_indexer_ready() -> bool {
-    everything::is_indexer_ready()
+async fn is_indexer_ready() -> bool {
+    tauri::async_runtime::spawn_blocking(|| {
+        everything::is_indexer_ready()
+    }).await.unwrap_or(false)
 }
 
 // ── Apps ────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn get_store(app: tauri::AppHandle) -> Store {
-    store::load(&app)
+async fn get_store(app: tauri::AppHandle) -> Store {
+    tauri::async_runtime::spawn_blocking(move || {
+        store::load(&app)
+    }).await.unwrap_or_else(|_| store::Store {
+        apps: vec![], groups: vec![], scanned_apps: vec![],
+        theme: store::ThemeConfig::default(),
+        guardian_enabled: true,
+        update_check_enabled: true,
+    })
 }
 
 #[tauri::command]
-fn add_app(app: tauri::AppHandle, path: String, name: Option<String>, group_id: Option<String>) -> Result<App, String> {
-    let exe_name = std::path::Path::new(&path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_else(|| "Unknown".into());
+async fn add_app(app: tauri::AppHandle, path: String, name: Option<String>, group_id: Option<String>) -> Result<App, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let exe_name = std::path::Path::new(&path)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Unknown".into());
 
-    let entry = App {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: name.unwrap_or(exe_name),
-        icon: icon::extract_icon(&path),
-        path,
-        group_id,
-        hotkey: None,
-    };
+        let entry = App {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.unwrap_or(exe_name),
+            icon: icon::extract_icon(&path),
+            path,
+            group_id,
+            hotkey: None,
+        };
 
-    let mut s = store::load(&app);
-    s.apps.push(entry.clone());
-    store::save(&app, &s);
-    Ok(entry)
+        let mut s = store::load(&app);
+        s.apps.push(entry.clone());
+        store::save(&app, &s);
+        Ok(entry)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn remove_app(app: tauri::AppHandle, id: String) {
-    let mut s = store::load(&app);
-    s.apps.retain(|a| a.id != id);
-    store::save(&app, &s);
+async fn remove_app(app: tauri::AppHandle, id: String) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        s.apps.retain(|a| a.id != id);
+        store::save(&app, &s);
+    }).await;
 }
 
 // ── Theme commands ───────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn set_active_theme(app: tauri::AppHandle, theme_id: String) {
-    let mut s = store::load(&app);
-    s.theme.active = theme_id;
-    store::save(&app, &s);
+async fn set_active_theme(app: tauri::AppHandle, theme_id: String) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        s.theme.active = theme_id;
+        store::save(&app, &s);
+    }).await;
 }
 
 #[tauri::command]
-fn save_custom_theme(app: tauri::AppHandle, theme: CustomTheme) {
-    let mut s = store::load(&app);
-    // Replace existing theme with same id, or add
-    if let Some(idx) = s.theme.custom_themes.iter().position(|t| t.id == theme.id) {
-        s.theme.custom_themes[idx] = theme;
-    } else {
-        s.theme.custom_themes.push(theme);
-    }
-    store::save(&app, &s);
+async fn save_custom_theme(app: tauri::AppHandle, theme: CustomTheme) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        if let Some(idx) = s.theme.custom_themes.iter().position(|t| t.id == theme.id) {
+            s.theme.custom_themes[idx] = theme;
+        } else {
+            s.theme.custom_themes.push(theme);
+        }
+        store::save(&app, &s);
+    }).await;
 }
 
 #[tauri::command]
-fn delete_custom_theme(app: tauri::AppHandle, theme_id: String) {
-    let mut s = store::load(&app);
-    s.theme.custom_themes.retain(|t| t.id != theme_id);
-    if s.theme.active == theme_id {
-        s.theme.active = "dark".to_string();
-    }
-    store::save(&app, &s);
+async fn delete_custom_theme(app: tauri::AppHandle, theme_id: String) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        s.theme.custom_themes.retain(|t| t.id != theme_id);
+        if s.theme.active == theme_id {
+            s.theme.active = "dark".to_string();
+        }
+        store::save(&app, &s);
+    }).await;
 }
 
 // ── Analytics commands ─────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn get_daily_activity(app: tauri::AppHandle, days: i64) -> Result<Vec<DailyActivity>, String> {
-    db::get_daily_activity(&app, days).map_err(|e| e.to_string())
+async fn get_daily_activity(app: tauri::AppHandle, days: i64) -> Result<Vec<DailyActivity>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        db::get_daily_activity(&app, days).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_app_stats(app: tauri::AppHandle) -> Result<Vec<AppStat>, String> {
-    let mut stats = db::get_app_stats(&app).map_err(|e| e.to_string())?;
-    let s = store::load(&app);
-    for stat in &mut stats {
-        stat.name = s.apps.iter()
-            .find(|a| a.path == stat.path)
-            .map(|a| a.name.clone())
-            .unwrap_or_else(|| stat.path.rsplit('\\').next().unwrap_or(&stat.path).trim_end_matches(".exe").to_string());
-    }
-    Ok(stats)
+async fn get_app_stats(app: tauri::AppHandle) -> Result<Vec<AppStat>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut stats = db::get_app_stats(&app).map_err(|e| e.to_string())?;
+        let s = store::load(&app);
+        for stat in &mut stats {
+            stat.name = s.apps.iter()
+                .find(|a| a.path == stat.path)
+                .map(|a| a.name.clone())
+                .unwrap_or_else(|| stat.path.rsplit('\\').next().unwrap_or(&stat.path).trim_end_matches(".exe").to_string());
+        }
+        Ok(stats)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_today_summary(app: tauri::AppHandle) -> Result<TodaySummary, String> {
-    db::get_today_summary(&app).map_err(|e| e.to_string())
+async fn get_today_summary(app: tauri::AppHandle) -> Result<TodaySummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        db::get_today_summary(&app).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_app_daily_detail(app: tauri::AppHandle, app_path: String, days: i64) -> Result<Vec<db::AppDailyDetail>, String> {
-    db::get_app_daily_detail(&app, &app_path, days).map_err(|e| e.to_string())
+async fn get_app_daily_detail(app: tauri::AppHandle, app_path: String, days: i64) -> Result<Vec<db::AppDailyDetail>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        db::get_app_daily_detail(&app, &app_path, days).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_app_network_activity(app: tauri::AppHandle, app_path: String, limit: i64) -> Result<Vec<db::NetworkRecord>, String> {
-    db::get_app_network_activity(&app, &app_path, limit).map_err(|e| e.to_string())
+async fn get_app_network_activity(app: tauri::AppHandle, app_path: String, limit: i64) -> Result<Vec<db::NetworkRecord>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        db::get_app_network_activity(&app, &app_path, limit).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_app_hourly(app: tauri::AppHandle, app_path: String) -> Result<Vec<(String, f64)>, String> {
-    db::get_app_hourly(&app, &app_path).map_err(|e| e.to_string())
+async fn get_app_hourly(app: tauri::AppHandle, app_path: String) -> Result<Vec<(String, f64)>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        db::get_app_hourly(&app, &app_path).map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn set_app_hotkey(app: tauri::AppHandle, app_id: String, hotkey: Option<String>) -> Result<(), String> {
-    let mut s = store::load(&app);
-    if let Some(entry) = s.apps.iter_mut().find(|a| a.id == app_id) {
-        entry.hotkey = hotkey;
-        store::save(&app, &s);
+async fn set_app_hotkey(app: tauri::AppHandle, app_id: String, hotkey: Option<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        if let Some(entry) = s.apps.iter_mut().find(|a| a.id == app_id) {
+            entry.hotkey = hotkey;
+            store::save(&app, &s);
+            keybinds::register_all(&app);
+            Ok(())
+        } else {
+            Err(format!("App {} not found", app_id))
+        }
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn set_global_hotkey(app: tauri::AppHandle, _hotkey: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
         keybinds::register_all(&app);
         Ok(())
-    } else {
-        Err(format!("App {} not found", app_id))
-    }
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn set_global_hotkey(app: tauri::AppHandle, _hotkey: String) -> Result<(), String> {
-    // Store global hotkey preference (future) + re-register
-    keybinds::register_all(&app);
-    Ok(())
+async fn move_app_to_group(app: tauri::AppHandle, app_id: String, group_id: Option<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        if let Some(entry) = s.apps.iter_mut().find(|a| a.id == app_id) {
+            entry.group_id = group_id;
+            store::save(&app, &s);
+            Ok(())
+        } else {
+            Err(format!("App {} not found", app_id))
+        }
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn move_app_to_group(app: tauri::AppHandle, app_id: String, group_id: Option<String>) -> Result<(), String> {
-    let mut s = store::load(&app);
-    if let Some(entry) = s.apps.iter_mut().find(|a| a.id == app_id) {
-        entry.group_id = group_id;
-        store::save(&app, &s);
-        Ok(())
-    } else {
-        Err(format!("App {} not found", app_id))
-    }
-}
-
-#[tauri::command]
-fn launch_app(path: String) -> Result<(), String> {
-    focus_or_launch(&path)
+async fn launch_app(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        focus_or_launch(&path)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[derive(serde::Deserialize)]
@@ -319,8 +358,10 @@ fn focus_or_launch(path: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn focus_or_launch_app(path: String) -> Result<(), String> {
-    focus_or_launch(&path)
+async fn focus_or_launch_app(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        focus_or_launch(&path)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -350,13 +391,17 @@ async fn get_app_metrics(path: String, name: String) -> Result<AppMetrics, Strin
 }
 
 #[tauri::command]
-fn toggle_autostart(name: String, path: String, enable: bool) -> Result<(), String> {
-    autostart::set_hub_autostart(&name, &path, enable)
+async fn toggle_autostart(name: String, path: String, enable: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        autostart::set_hub_autostart(&name, &path, enable)
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn get_startup_items() -> Vec<autostart::StartupItem> {
-    autostart::get_startup_items()
+async fn get_startup_items() -> Vec<autostart::StartupItem> {
+    tauri::async_runtime::spawn_blocking(|| {
+        autostart::get_startup_items()
+    }).await.unwrap_or_default()
 }
 
 // ── Uninstaller ─────────────────────────────────────────────────────────────
@@ -372,64 +417,76 @@ async fn list_uninstallable_apps(hints: Option<Vec<String>>) -> Result<Vec<unins
 async fn run_uninstall_string(command: String) -> Result<(), String> {
     let parts: Vec<String> = shell_words::split(&command).map_err(|e| e.to_string())?;
     if parts.is_empty() { return Err("Empty command".into()); }
-    
-    let mut cmd = std::process::Command::new(&parts[0]);
-    if parts.len() > 1 {
-        cmd.args(&parts[1..]);
-    }
 
-    let status = cmd.status().map_err(|e| e.to_string())?;
-    if status.success() { Ok(()) } else { Err("Uninstaller exited with error".into()) }
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = std::process::Command::new(&parts[0]);
+        if parts.len() > 1 {
+            cmd.args(&parts[1..]);
+        }
+        let status = cmd.status().map_err(|e| e.to_string())?;
+        if status.success() { Ok(()) } else { Err("Uninstaller exited with error".into()) }
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn find_leftovers(name: String, publisher: Option<String>) -> Vec<uninstaller::Leftover> {
-    uninstaller::find_leftovers(&name, publisher.as_deref())
+async fn find_leftovers(name: String, publisher: Option<String>) -> Vec<uninstaller::Leftover> {
+    tauri::async_runtime::spawn_blocking(move || {
+        uninstaller::find_leftovers(&name, publisher.as_deref())
+    }).await.unwrap_or_default()
 }
 
 #[tauri::command]
-fn delete_leftover(leftover: uninstaller::Leftover) -> Result<(), String> {
-    uninstaller::delete_leftover(&leftover)
+async fn delete_leftover(leftover: uninstaller::Leftover) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        uninstaller::delete_leftover(&leftover)
+    }).await.map_err(|e| e.to_string())?
 }
 
 // ── Groups ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn add_group(app: tauri::AppHandle, name: String, color: Option<String>) -> Group {
-    let group = Group {
-        id: uuid::Uuid::new_v4().to_string(),
-        name,
-        color,
-    };
-    let mut s = store::load(&app);
-    s.groups.push(group.clone());
-    store::save(&app, &s);
-    group
-}
-
-#[tauri::command]
-fn remove_group(app: tauri::AppHandle, id: String) {
-    let mut s = store::load(&app);
-    s.groups.retain(|g| g.id != id);
-    // Unassign apps that belonged to this group
-    for a in s.apps.iter_mut() {
-        if a.group_id.as_deref() == Some(&id) {
-            a.group_id = None;
-        }
-    }
-    store::save(&app, &s);
-}
-
-#[tauri::command]
-fn rename_group(app: tauri::AppHandle, id: String, name: String) -> Result<(), String> {
-    let mut s = store::load(&app);
-    if let Some(g) = s.groups.iter_mut().find(|g| g.id == id) {
-        g.name = name;
+async fn add_group(app: tauri::AppHandle, name: String, color: Option<String>) -> Group {
+    tauri::async_runtime::spawn_blocking(move || {
+        let group = Group {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            color,
+        };
+        let mut s = store::load(&app);
+        s.groups.push(group.clone());
         store::save(&app, &s);
-        Ok(())
-    } else {
-        Err(format!("Group {} not found", id))
-    }
+        group
+    }).await.unwrap_or_else(|_| Group {
+        id: String::new(), name: String::new(), color: None,
+    })
+}
+
+#[tauri::command]
+async fn remove_group(app: tauri::AppHandle, id: String) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        s.groups.retain(|g| g.id != id);
+        for a in s.apps.iter_mut() {
+            if a.group_id.as_deref() == Some(&id) {
+                a.group_id = None;
+            }
+        }
+        store::save(&app, &s);
+    }).await;
+}
+
+#[tauri::command]
+async fn rename_group(app: tauri::AppHandle, id: String, name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        if let Some(g) = s.groups.iter_mut().find(|g| g.id == id) {
+            g.name = name;
+            store::save(&app, &s);
+            Ok(())
+        } else {
+            Err(format!("Group {} not found", id))
+        }
+    }).await.map_err(|e| e.to_string())?
 }
 
 // ── Auto-detect ──────────────────────────────────────────────────────────────
@@ -442,10 +499,74 @@ async fn scan_installed_apps(app: tauri::AppHandle) -> Result<Vec<DetectedApp>, 
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
-            let results = scan_registry();
+            use winreg::enums::{HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER, KEY_READ};
+            use winreg::RegKey;
+
+            let keys: [(winreg::HKEY, &str); 3] = [
+                (HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+                (HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+                (HKEY_CURRENT_USER,  r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+            ];
+
+            let mut results: Vec<DetectedApp> = Vec::new();
+            let mut seen_paths = std::collections::HashSet::new();
+
+            for (hive, path) in &keys {
+                let root = RegKey::predef(*hive);
+                let Ok(uninstall_key) = root.open_subkey_with_flags(path, KEY_READ) else { continue };
+
+                for subkey_name in uninstall_key.enum_keys().filter_map(|k| k.ok()) {
+                    let Ok(subkey) = uninstall_key.open_subkey_with_flags(&subkey_name, KEY_READ) else { continue };
+
+                    let is_system = subkey.get_value::<u32, _>("SystemComponent").unwrap_or(0);
+                    if is_system == 1 { continue; }
+
+                    if subkey.get_value::<String, _>("ParentKeyName").is_ok() { continue; }
+
+                    let Ok(display_name) = subkey.get_value::<String, _>("DisplayName") else { continue };
+                    let trimmed_name = display_name.trim();
+                    if trimmed_name.is_empty() { continue }
+
+                    let lower_name = trimmed_name.to_lowercase();
+
+                    if lower_name.starts_with("kb") || 
+                       lower_name.contains("update for") ||
+                       lower_name.contains("security update") || 
+                       lower_name.contains("hotfix") ||
+                       lower_name.contains("redistributable") ||
+                       lower_name.contains("c++") ||
+                       lower_name.contains(".net") ||
+                       lower_name.contains("sdk") ||
+                       lower_name.contains("runtime") ||
+                       lower_name.contains("language pack") ||
+                       lower_name.contains("prerequisite") {
+                        continue;
+                    }
+
+                    let Some(exe_path) = find_exe_path(&subkey) else { continue };
+                    if exe_path.is_empty() { continue }
+
+                    let lower_path = exe_path.to_lowercase();
+                    if seen_paths.contains(&lower_path) { continue }
+                    seen_paths.insert(lower_path);
+
+                    let icon = icon::extract_icon(&exe_path);
+
+                    let app_entry = DetectedApp {
+                        name: trimmed_name.to_string(),
+                        path: exe_path,
+                        icon,
+                    };
+                    results.push(app_entry.clone());
+                    let _ = app.emit("scan_app_found", &app_entry);
+                }
+            }
+
+            results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
             let mut s = store::load(&app);
             s.scanned_apps = results.clone();
             store::save(&app, &s);
+            let _ = app.emit("scan_complete", &results.len());
             results
         }
         #[cfg(not(target_os = "windows"))]
@@ -619,13 +740,17 @@ struct SetupStatus {
 }
 
 #[tauri::command]
-fn get_setup_status(app: tauri::AppHandle) -> SetupStatus {
-    let s = setup::load_state(&app);
-    SetupStatus {
-        completed: s.completed,
-        winget_ok: s.winget_ok,
-        initial_scan_done: s.initial_scan_done,
-    }
+async fn get_setup_status(app: tauri::AppHandle) -> SetupStatus {
+    tauri::async_runtime::spawn_blocking(move || {
+        let s = setup::load_state(&app);
+        SetupStatus {
+            completed: s.completed,
+            winget_ok: s.winget_ok,
+            initial_scan_done: s.initial_scan_done,
+        }
+    }).await.unwrap_or_else(|_| SetupStatus {
+        completed: false, winget_ok: false, initial_scan_done: false,
+    })
 }
 
 #[derive(Clone, Serialize)]
@@ -639,81 +764,87 @@ struct SetupProgressEvent {
 #[tauri::command]
 async fn run_first_setup(app: tauri::AppHandle) -> Result<(), String> {
     let app_handle = app.clone();
-    let emit = move |step: &str, status: &str, message: &str, percent: u8| {
-        let _ = app_handle.emit("setup_progress", SetupProgressEvent {
-            step: step.to_string(),
-            status: status.to_string(),
-            message: message.to_string(),
-            percent,
-        });
-    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let emit = |step: &str, status: &str, message: &str, percent: u8| {
+            let _ = app_handle.emit("setup_progress", SetupProgressEvent {
+                step: step.to_string(),
+                status: status.to_string(),
+                message: message.to_string(),
+                percent,
+            });
+        };
 
-    emit("winget", "running", "Checking package managers…", 5);
+        emit("winget", "running", "Checking package managers…", 5);
 
-    let winget_ok = if setup::check_winget() {
-        emit("winget", "ok", "winget is available", 20);
-        true
-    } else {
-        emit("winget", "running", "winget not found — downloading App Installer…", 8);
-        let (ok, log) = setup::install_winget();
-        if ok {
-            emit("winget", "ok", "winget installed successfully", 20);
+        let winget_ok = if setup::check_winget() {
+            emit("winget", "ok", "winget is available", 20);
             true
         } else {
-            let short = log.lines().last().unwrap_or("Install failed").to_string();
-            emit("winget", "error", &format!("winget install failed: {}", short), 20);
-            false
+            emit("winget", "running", "winget not found — downloading App Installer…", 8);
+            let (ok, log) = setup::install_winget();
+            if ok {
+                emit("winget", "ok", "winget installed successfully", 20);
+                true
+            } else {
+                let short = log.lines().last().unwrap_or("Install failed").to_string();
+                emit("winget", "error", &format!("winget install failed: {}", short), 20);
+                false
+            }
+        };
+
+        if winget_ok {
+            emit("sources", "running", "Updating package sources…", 22);
+            let _ = std::thread::spawn(|| setup::update_winget_sources());
+            emit("sources", "ok", "Sources updated", 35);
+        } else {
+            emit("sources", "skip", "Skipped (winget not available)", 35);
         }
-    };
 
-    if winget_ok {
-        emit("sources", "running", "Updating package sources…", 22);
-        let _ = std::thread::spawn(|| setup::update_winget_sources());
-        emit("sources", "ok", "Sources updated", 35);
-    } else {
-        emit("sources", "skip", "Skipped (winget not available)", 35);
-    }
+        emit("scan", "running", "Scanning installed programs…", 38);
 
-    emit("scan", "running", "Scanning installed programs…", 38);
+        #[cfg(target_os = "windows")]
+        let scan_result = {
+            let results = scan_registry();
+            let mut s = store::load(&app);
+            s.scanned_apps = results.clone();
+            store::save(&app, &s);
+            let count = results.len();
+            (count, results)
+        };
+        #[cfg(not(target_os = "windows"))]
+        let scan_result = (0usize, vec![]);
 
-    #[cfg(target_os = "windows")]
-    let scan_result = {
-        let results = scan_registry();
-        let mut s = store::load(&app);
-        s.scanned_apps = results.clone();
-        store::save(&app, &s);
-        let count = results.len();
-        (count, results)
-    };
-    #[cfg(not(target_os = "windows"))]
-    let scan_result = (0usize, vec![]);
+        let (count, _) = scan_result;
+        emit("scan", "ok", &format!("Found {} installed programs", count), 90);
 
-    let (count, _) = scan_result;
-    emit("scan", "ok", &format!("Found {} installed programs", count), 90);
+        let mut state = setup::load_state(&app);
+        state.completed = true;
+        state.winget_ok = winget_ok;
+        state.initial_scan_done = true;
+        setup::save_state(&app, &state);
 
-    let mut state = setup::load_state(&app);
-    state.completed = true;
-    state.winget_ok = winget_ok;
-    state.initial_scan_done = true;
-    setup::save_state(&app, &state);
+        emit("done", "ok", "Setup complete", 100);
 
-    emit("done", "ok", "Setup complete", 100);
-
-    Ok(())
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn mark_setup_complete(app: tauri::AppHandle) {
-    let mut state = setup::load_state(&app);
-    state.completed = true;
-    setup::save_state(&app, &state);
+async fn mark_setup_complete(app: tauri::AppHandle) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let mut state = setup::load_state(&app);
+        state.completed = true;
+        setup::save_state(&app, &state);
+    }).await;
 }
 
 #[tauri::command]
-fn reset_setup_status(app: tauri::AppHandle) {
-    let mut state = setup::load_state(&app);
-    state.completed = false;
-    setup::save_state(&app, &state);
+async fn reset_setup_status(app: tauri::AppHandle) {
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        let mut state = setup::load_state(&app);
+        state.completed = false;
+        setup::save_state(&app, &state);
+    }).await;
 }
 
 // ── Store (Universal) ────────────────────────────────────────────────────────
@@ -726,12 +857,14 @@ struct ManagersAvailable {
 }
 
 #[tauri::command]
-fn winget_check() -> ManagersAvailable {
-    ManagersAvailable {
-        winget: winget::is_available(),
-        scoop: scoop::is_available(),
-        choco: choco::is_available(),
-    }
+async fn winget_check() -> ManagersAvailable {
+    tauri::async_runtime::spawn_blocking(|| {
+        ManagersAvailable {
+            winget: winget::is_available(),
+            scoop: scoop::is_available(),
+            choco: choco::is_available(),
+        }
+    }).await.unwrap_or(ManagersAvailable { winget: false, scoop: false, choco: false })
 }
 
 #[tauri::command]
@@ -856,17 +989,24 @@ async fn winget_install(
 }
 
 #[tauri::command]
-fn winget_uninstall(app_handle: tauri::AppHandle, id: String) -> InstallResult {
-    let (success, log) = winget::uninstall(&id);
-    if success {
-        let _ = app_handle.emit("store_updated", ());
-    }
-    InstallResult { success, log, exe_path: None, icon: None }
+async fn winget_uninstall(app_handle: tauri::AppHandle, id: String) -> InstallResult {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let (success, log) = winget::uninstall(&id);
+        if success {
+            let _ = app_handle.emit("store_updated", ());
+        }
+        InstallResult { success, log, exe_path: None, icon: None }
+    }).await.unwrap_or_else(|_| InstallResult {
+        success: false, log: "Thread pool shut down".into(), exe_path: None, icon: None,
+    });
+    result
 }
 
 #[tauri::command]
-fn winget_list_installed() -> Vec<winget::WingetPackage> {
-    winget::list_installed()
+async fn winget_list_installed() -> Vec<winget::WingetPackage> {
+    tauri::async_runtime::spawn_blocking(|| {
+        winget::list_installed()
+    }).await.unwrap_or_default()
 }
 
 fn find_installed_exe(name: &str) -> Option<String> {
@@ -902,37 +1042,109 @@ fn find_installed_exe(name: &str) -> Option<String> {
 
 // ── Guardian: startup monitoring responses ───────────────────────────────────
 #[tauri::command]
-fn guardian_allow_startup(name: String, _cmd: String) -> Result<(), String> {
+async fn guardian_allow_startup(name: String, _cmd: String) -> Result<(), String> {
     println!("Guardian: allowed startup entry '{}'", name);
     Ok(())
 }
 #[tauri::command]
-fn guardian_deny_startup(name: String, cmd: String) -> Result<(), String> {
-    println!("Guardian: denied startup entry '{}'", name);
-    crate::autostart::set_autostart(&name, &cmd, false)
+async fn guardian_deny_startup(name: String, cmd: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        println!("Guardian: denied startup entry '{}'", name);
+        crate::autostart::set_autostart(&name, &cmd, false)
+    }).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn guardian_open_folder(cmd: String) -> Result<(), String> {
-    let path = std::path::Path::new(&cmd);
-    let parent = path.parent().unwrap_or(path);
-    std::process::Command::new("explorer")
-        .arg(parent.as_os_str())
-        .spawn()
-        .map_err(|e| format!("Failed to open folder: {}", e))?;
-    Ok(())
+async fn guardian_open_folder(cmd: String) -> Result<(), String> {
+        tauri::async_runtime::spawn_blocking(move || {
+            let path = std::path::Path::new(&cmd);
+            let parent = path.parent().unwrap_or(path);
+            std::process::Command::new("explorer")
+                .arg(parent.as_os_str())
+                .spawn()
+                .map_err(|e| format!("Failed to open folder: {}", e))?;
+            Ok(())
+        }).await.map_err(|e| e.to_string())?
+}
+
+// ── Disk Map ──────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+async fn scan_disk(drive: char) -> Result<diskmap::DirScanResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        diskmap::scan_drive_mft(drive, &|_| {})
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn delete_disk_entry(path: String, is_dir: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if is_dir {
+            std::fs::remove_dir_all(&path).map_err(|e| e.to_string())
+        } else {
+            std::fs::remove_file(&path).map_err(|e| e.to_string())
+        }
+    }).await.map_err(|e| e.to_string())?
+}
+
+// ── Updater ───────────────────────────────────────────────────
+
+#[tauri::command]
+async fn check_for_update() -> updater::UpdateInfo {
+    updater::check_for_update().await
+}
+
+#[tauri::command]
+async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, String> {
+    let app_data = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let dest_dir = app_data.join("updates");
+    std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+    let path = updater::download_update(&url, &dest_dir, |_, _| {}).await?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn install_update(path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    updater::install_update(&p)
+}
+
+#[tauri::command]
+async fn get_update_check_enabled(app: tauri::AppHandle) -> bool {
+    tauri::async_runtime::spawn_blocking(move || {
+        store::load(&app).update_check_enabled
+    }).await.unwrap_or(true)
+}
+
+#[tauri::command]
+async fn set_update_check_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        s.update_check_enabled = enabled;
+        store::save(&app, &s);
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn exit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 // ── Guardian settings ────────────────────────────────────────────────────────
 #[tauri::command]
-fn get_guardian_enabled(app: tauri::AppHandle) -> bool {
-    crate::store::load(&app).guardian_enabled
+async fn get_guardian_enabled(app: tauri::AppHandle) -> bool {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::store::load(&app).guardian_enabled
+    }).await.unwrap_or(false)
 }
 #[tauri::command]
-fn set_guardian_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
-    let mut store = crate::store::load(&app);
-    store.guardian_enabled = enabled;
-    crate::store::save(&app, &store);
-    Ok(())
+async fn set_guardian_enabled(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut store = crate::store::load(&app);
+        store.guardian_enabled = enabled;
+        crate::store::save(&app, &store);
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
 }
 
 // ── Sync ──────────────────────────────────────────────────────────────────────
@@ -1041,101 +1253,136 @@ async fn sync_api_req<T: Serialize, R: for<'de> serde::Deserialize<'de>>(
 async fn sync_register(app: tauri::AppHandle, email: String, password: String) -> Result<AuthResponse, String> {
     let req = RegisterRequest { email, password };
     let resp: AuthResponse = sync_api_req("/register", None, &req).await?;
-    if resp.ok { save_sync_token(&app, &SyncToken { email: req.email, token: resp.token.clone() }); }
+    let token = resp.token.clone();
+    if resp.ok {
+        let app2 = app.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            save_sync_token(&app2, &SyncToken { email: req.email, token });
+        }).await;
+    }
     Ok(resp)
 }
 #[tauri::command]
 async fn sync_login(app: tauri::AppHandle, email: String, password: String) -> Result<AuthResponse, String> {
     let req = LoginRequest { email, password };
     let resp: AuthResponse = sync_api_req("/login", None, &req).await?;
-    if resp.ok { save_sync_token(&app, &SyncToken { email: req.email, token: resp.token.clone() }); }
+    let token = resp.token.clone();
+    if resp.ok {
+        let app2 = app.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            save_sync_token(&app2, &SyncToken { email: req.email, token });
+        }).await;
+    }
     Ok(resp)
 }
 #[tauri::command]
-fn sync_logout(app: tauri::AppHandle) -> Result<(), String> { clear_sync_token(&app); Ok(()) }
+async fn sync_logout(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        clear_sync_token(&app);
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
+}
 #[tauri::command]
-fn sync_get_token(app: tauri::AppHandle) -> Result<Option<SyncToken>, String> { Ok(load_sync_token(&app)) }
+async fn sync_get_token(app: tauri::AppHandle) -> Result<Option<SyncToken>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(load_sync_token(&app))
+    }).await.map_err(|e| e.to_string())?
+}
 
 #[tauri::command]
 async fn sync_push(app: tauri::AppHandle) -> Result<(), String> {
-    let token = load_sync_token(&app).ok_or("Not logged in")?;
-    let s = crate::store::load(&app);
-    let ign = load_ignored_list(&app);
-    let payload = SyncPayload {
-        apps: s.apps.into_iter().map(|a| SyncAppEntry {
-            name: a.name, path: a.path, group: a.group_id, hotkey: a.hotkey
-        }).collect(),
-        groups: s.groups.into_iter().map(|g| SyncGroupEntry { id: g.id, name: g.name, color: g.color }).collect(),
-        ignored: ign.ignored,
-        theme: SyncThemeEntry { active: s.theme.active, custom_themes: s.theme.custom_themes },
-        stats: vec![],
-    };
+    let (token, payload) = tauri::async_runtime::spawn_blocking(move || {
+        let token = load_sync_token(&app).ok_or("Not logged in")?;
+        let s = crate::store::load(&app);
+        let ign = load_ignored_list(&app);
+        let payload = SyncPayload {
+            apps: s.apps.into_iter().map(|a| SyncAppEntry {
+                name: a.name, path: a.path, group: a.group_id, hotkey: a.hotkey
+            }).collect(),
+            groups: s.groups.into_iter().map(|g| SyncGroupEntry { id: g.id, name: g.name, color: g.color }).collect(),
+            ignored: ign.ignored,
+            theme: SyncThemeEntry { active: s.theme.active, custom_themes: s.theme.custom_themes },
+            stats: vec![],
+        };
+        Ok::<(SyncToken, SyncPayload), String>((token, payload))
+    }).await.map_err(|e| e.to_string())??;
     sync_api_req::<SyncPayload, ()>("/sync/push", Some(&token.token), &payload).await?;
     Ok(())
 }
 #[tauri::command]
 async fn sync_pull(app: tauri::AppHandle) -> Result<SyncRemote, String> {
-    let token = load_sync_token(&app).ok_or("Not logged in")?;
+    let token = tauri::async_runtime::spawn_blocking(move || {
+        load_sync_token(&app).ok_or("Not logged in".to_string())
+    }).await.map_err(|e| e.to_string())??;
     let remote: SyncRemote = sync_api_req("/sync/pull", Some(&token.token), &()).await?;
     Ok(remote)
 }
 #[tauri::command]
 async fn sync_import(app: tauri::AppHandle, remote: SyncRemote) -> Result<(), String> {
-    let mut store = crate::store::load(&app);
-    store.apps = remote.apps.into_iter().map(|a| crate::store::App {
-        id: uuid::Uuid::new_v4().to_string(),
-        name: a.name,
-        path: a.path,
-        icon: None,
-        group_id: a.group,
-        hotkey: a.hotkey,
-    }).collect();
-    store.groups = remote.groups.into_iter().map(|g| crate::store::Group {
-        id: g.id,
-        name: g.name,
-        color: g.color,
-    }).collect();
-    store.theme = crate::store::ThemeConfig {
-        active: remote.theme.active,
-        custom_themes: remote.theme.custom_themes,
-    };
-    crate::store::save(&app, &store);
-    let _ = app.emit("store_updated", ());
-    Ok(())
+    let app2 = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut store = crate::store::load(&app2);
+        store.apps = remote.apps.into_iter().map(|a| crate::store::App {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: a.name,
+            path: a.path,
+            icon: None,
+            group_id: a.group,
+            hotkey: a.hotkey,
+        }).collect();
+        store.groups = remote.groups.into_iter().map(|g| crate::store::Group {
+            id: g.id,
+            name: g.name,
+            color: g.color,
+        }).collect();
+        store.theme = crate::store::ThemeConfig {
+            active: remote.theme.active,
+            custom_themes: remote.theme.custom_themes,
+        };
+        crate::store::save(&app2, &store);
+        let _ = app2.emit("store_updated", ());
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn sync_set_ignored(app: tauri::AppHandle, ignored: Vec<String>) -> Result<(), String> {
-    save_ignored_list(&app, &IgnoredList { ignored });
-    Ok(())
+async fn sync_set_ignored(app: tauri::AppHandle, ignored: Vec<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        save_ignored_list(&app, &IgnoredList { ignored });
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-fn sync_get_ignored(app: tauri::AppHandle) -> Result<IgnoredList, String> {
-    Ok(load_ignored_list(&app))
+async fn sync_get_ignored(app: tauri::AppHandle) -> Result<IgnoredList, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(load_ignored_list(&app))
+    }).await.map_err(|e| e.to_string())?
 }
 
 // ── App entry point ──────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn create_shortcut(name: String, target_path: String) -> Result<(), String> {
-    let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let current_exe_str = current_exe.to_string_lossy();
-    
-    let ps_script = format!(r#"
-        $WshShell = New-Object -comObject WScript.Shell
-        $DesktopPath = [Environment]::GetFolderPath("Desktop")
-        $Shortcut = $WshShell.CreateShortcut("$DesktopPath\{}.lnk")
-        $Shortcut.TargetPath = "{}"
-        $Shortcut.Arguments = "--launch `"{}`""
-        $Shortcut.IconLocation = "{},0"
-        $Shortcut.Save()
-    "#, name.replace("\"", ""), current_exe_str, target_path, target_path);
+async fn create_shortcut(name: String, target_path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let current_exe_str = current_exe.to_string_lossy();
+        
+        let ps_script = format!(r#"
+            $WshShell = New-Object -comObject WScript.Shell
+            $DesktopPath = [Environment]::GetFolderPath("Desktop")
+            $Shortcut = $WshShell.CreateShortcut("$DesktopPath\{}.lnk")
+            $Shortcut.TargetPath = "{}"
+            $Shortcut.Arguments = "--launch `"{}`""
+            $Shortcut.IconLocation = "{},0"
+            $Shortcut.Save()
+        "#, name.replace("\"", ""), current_exe_str, target_path, target_path);
 
-    std::process::Command::new("powershell")
-        .args(["-NoProfile", "-Command", &ps_script])
-        .output()
-        .map_err(|e| e.to_string())?;
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &ps_script])
+            .output()
+            .map_err(|e| e.to_string())?;
 
-    Ok(())
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1232,6 +1479,19 @@ pub fn run() {
                 }
             });
 
+            // ── Background Update Check ──
+            let app_handle_for_update = app_handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(3));
+                let s = store::load(&app_handle_for_update);
+                if s.update_check_enabled {
+                    let info = tauri::async_runtime::block_on(updater::check_for_update());
+                    if info.available {
+                        let _ = app_handle_for_update.emit("update_available", &info);
+                    }
+                }
+            });
+
             // ── Background Logging Thread ──
             let app_handle_for_logging = app_handle.clone();
             std::thread::spawn(move || {
@@ -1296,7 +1556,9 @@ pub fn run() {
                         app_h.exit(0);
                     } else if event.id.as_ref() != "empty" {
                         let path = event.id.as_ref().to_string();
-                        focus_or_launch_app(path).ok();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = focus_or_launch_app(path).await;
+                        });
                     }
                 })
                 .build(app)?;
@@ -1364,6 +1626,14 @@ pub fn run() {
             sync_import,
             sync_set_ignored,
             sync_get_ignored,
+            scan_disk,
+            delete_disk_entry,
+            check_for_update,
+            download_update,
+            install_update,
+            get_update_check_enabled,
+            set_update_check_enabled,
+            exit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

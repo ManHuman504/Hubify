@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useApps, type CustomTheme } from '../hooks/useApps'
+import UpdateModal, { type UpdateInfo } from '../components/UpdateModal'
 import './Page.css'
 import './Settings.css'
 
@@ -170,6 +171,10 @@ export default function Settings() {
   const [managers, setManagers] = useState({ winget: false, scoop: false, choco: false })
   const [indexerReady, setIndexerReady] = useState(false)
   const [guardianEnabled, setGuardianEnabled] = useState(true)
+  const [updateCheckEnabled, setUpdateCheckEnabled] = useState(true)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
+  const [checkResult, setCheckResult] = useState<string | null>(null)
 
   // Editing state
   const [editingVars, setEditingVars] = useState<Record<string, string>>({})
@@ -180,6 +185,7 @@ export default function Settings() {
     invoke('winget_check').then(r => setManagers(r as any)).catch(() => {})
     invoke<boolean>('is_indexer_ready').then(r => setIndexerReady(r)).catch(() => {})
     invoke<boolean>('get_guardian_enabled').then(r => setGuardianEnabled(r)).catch(() => {})
+    invoke<boolean>('get_update_check_enabled').then(r => setUpdateCheckEnabled(r)).catch(() => {})
   }, [])
 
   // Initialize editing vars when starting a new custom theme
@@ -474,17 +480,87 @@ export default function Settings() {
 
         {/* ── About Tab ───────────────────────────────────────── */}
         {settingsTab === 'About' && (
-          <div className="settings-section">
-            <p className="settings-section-title">About</p>
-            <div className="settings-card">
-              <div className="settings-row">
-                <div className="settings-row-info">
-                  <p className="settings-row-label">Hubify</p>
-                  <p className="settings-row-desc">All-in-one Windows app hub. Built with Tauri + Rust.</p>
+          <>
+            <div className="settings-section">
+              <p className="settings-section-title">About</p>
+              <div className="settings-card">
+                <div className="settings-row">
+                  <div className="settings-row-info">
+                    <p className="settings-row-label">Hubify</p>
+                    <p className="settings-row-desc">All-in-one Windows app hub. Built with Tauri + Rust.</p>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+
+            <div className="settings-section">
+              <p className="settings-section-title">Updates</p>
+              <div className="settings-card">
+                <div className="settings-row">
+                  <div className="settings-row-info">
+                    <p className="settings-row-label">Auto-check updates</p>
+                    <p className="settings-row-desc">Check for new versions on startup.</p>
+                  </div>
+                  <button
+                    className={`toggle-btn ${updateCheckEnabled ? 'active' : ''}`}
+                    onClick={() => {
+                      const next = !updateCheckEnabled
+                      setUpdateCheckEnabled(next)
+                      invoke('set_update_check_enabled', { enabled: next }).catch(() => {})
+                    }}
+                  >
+                    <div className="toggle-thumb" />
+                  </button>
+                </div>
+                <div className="settings-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div className="settings-row-info">
+                      <p className="settings-row-label">Check for updates</p>
+                      <p className="settings-row-desc">
+                        Current version: v{updateInfo?.current_version ?? '0.1.0'}
+                      </p>
+                    </div>
+                    <button
+                      className="detail-btn"
+                      disabled={checkingUpdate}
+                      onClick={async () => {
+                        setCheckingUpdate(true)
+                        setCheckResult(null)
+                        try {
+                          const info = await invoke<UpdateInfo>('check_for_update')
+                          setUpdateInfo(info)
+                          if (info.available) {
+                            setCheckResult(`Update v${info.latest_version} available!`)
+                          } else {
+                            setCheckResult('You have the latest version.')
+                          }
+                        } catch {
+                          setCheckResult('Failed to check for updates.')
+                        } finally {
+                          setCheckingUpdate(false)
+                        }
+                      }}
+                    >
+                      {checkingUpdate ? 'Checking…' : 'Check'}
+                    </button>
+                  </div>
+                  {checkResult && (
+                    <p style={{ fontSize: 11, color: !checkResult.includes('latest') && !checkResult.includes('Failed') ? 'var(--accent)' : 'var(--text-muted)' }}>
+                      {checkResult}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {updateInfo?.available && (
+              <UpdateModal
+                info={updateInfo}
+                onClose={() => setUpdateInfo(null)}
+                onUpdateInstalled={() => {}}
+              />
+            )}
+          </>
         )}
       </div>
     </div>

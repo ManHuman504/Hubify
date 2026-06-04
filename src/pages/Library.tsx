@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { listen, UnlistenFn } from '@tauri-apps/api/event'
 import { useApps } from '../hooks/useApps'
 import type { DetectedApp, Group } from '../hooks/useApps'
 import { layoutAwareMatch } from '../utils/keyboard'
@@ -73,6 +74,9 @@ export default function Library() {
   const [search, setSearch] = useState('')
   const [picking, setPicking] = useState<DetectedApp | null>(null)
 
+  const [streamedApps, setStreamedApps] = useState<DetectedApp[]>([])
+  const unlistenRef = useRef<UnlistenFn | null>(null)
+
   // Everything Search Integration
   const [evApps, setEvApps] = useState<any[]>([])
   const [evLoading, setEvLoading] = useState(false)
@@ -107,27 +111,55 @@ export default function Library() {
     }
   }, [search, scannedApps])
 
+  // Cleanup listeners on unmount
+  useEffect(() => {
+    return () => {
+      if (unlistenRef.current) {
+        unlistenRef.current()
+        unlistenRef.current = null
+      }
+    }
+  }, [])
+
   const scan = useCallback(async () => {
     setLoading(true)
-    setProgress(0)
+    setStreamedApps([])
 
-    // Animate progress while waiting
+    // Subscribe to streaming events
+    const unlistenFound = await listen<DetectedApp>('scan_app_found', (event) => {
+      setStreamedApps(prev => {
+        // Deduplicate by path
+        if (prev.some(a => a.path.toLowerCase() === event.payload.path.toLowerCase())) {
+          return prev
+        }
+        return [...prev, event.payload]
+      })
+    })
+
+    listen<number>('scan_complete', async () => {
+      unlistenFound()
+      await refresh()
+      setLoading(false)
+      setProgress(0)
+    })
+
+    unlistenRef.current = unlistenFound
+
+    // Animate progress while waiting (for the progress bar)
     const timer = setInterval(() => {
       setProgress(p => {
         if (p >= 90) { clearInterval(timer); return 90 }
-        return p + Math.random() * 12
+        return p + Math.random() * 15
       })
-    }, 180)
+    }, 200)
 
     try {
       await invoke('scan_installed_apps')
-      await refresh() // Refetch from store
       clearInterval(timer)
       setProgress(100)
     } catch {
       clearInterval(timer)
-    } finally {
-      setTimeout(() => { setLoading(false); setProgress(0) }, 400)
+      unlistenFound()
     }
   }, [refresh])
 
@@ -135,7 +167,8 @@ export default function Library() {
     await addApp(det.path, det.name, groupId)
   }
 
-  const filtered = scannedApps.filter(d => layoutAwareMatch(d.name, search))
+  const displayApps = loading && streamedApps.length > 0 ? streamedApps : scannedApps
+  const filtered = displayApps.filter(d => layoutAwareMatch(d.name, search))
 
   return (
     <div className="page">
@@ -144,9 +177,11 @@ export default function Library() {
           <div>
             <h1 className="page-title">Library</h1>
             <p className="page-subtitle">
-              {scannedApps.length > 0
-                ? `${scannedApps.length} programs found`
-                : 'Auto-detect installed programs'}
+              {loading
+                ? `Found ${streamedApps.length} programs so far…`
+                : scannedApps.length > 0
+                  ? `${scannedApps.length} programs found`
+                  : 'Auto-detect installed programs'}
             </p>
           </div>
           <button className="btn-primary" onClick={scan} disabled={loading}>
@@ -159,13 +194,13 @@ export default function Library() {
           <div className="lib-progress-wrap">
             <div className="lib-progress-bar" style={{ width: `${progress}%` }} />
             <span className="lib-progress-label">
-              Scanning registry… {progress < 100 ? `${Math.floor(progress)}%` : 'Done'}
+              Scanning registry… {streamedApps.length > 0 ? `${streamedApps.length} found` : `${Math.floor(progress)}%`}
             </span>
           </div>
         )}
 
         {/* Search */}
-        {scannedApps.length > 0 && !loading && (
+        {displayApps.length > 0 && !loading && (
           <div className="library-search-row">
             <input
               ref={searchInputRef}
@@ -175,13 +210,13 @@ export default function Library() {
               onChange={e => setSearch(e.target.value)}
             />
             <span className="library-count">
-              {search ? `${filtered.length} of ${scannedApps.length}` : `${scannedApps.length} found`}
+              {search ? `${filtered.length} of ${displayApps.length}` : `${displayApps.length} found`}
             </span>
           </div>
         )}
       </div>
 
-      {/* Empty state */}
+      {/* Empty state (before any scan) */}
       {scannedApps.length === 0 && !loading && (
         <div className="page-empty">
           <span className="empty-icon">⊞</span>
@@ -190,8 +225,36 @@ export default function Library() {
         </div>
       )}
 
-      {/* Scanning placeholder */}
-      {loading && scannedApps.length === 0 && (
+      {/* Scanning — show streamed apps as they arrive */}
+      {loading && streamedApps.length > 0 && (
+        <div className="hub-grid lib-grid">
+          {streamedApps.map(det => {
+            const key = det.path.toLowerCase()
+            const isAdded = addedPaths.has(key)
+            return (
+              <div
+                key={det.path}
+                className={`lib-card hub-card-base ${isAdded ? 'lib-card-added' : ''} lib-card-streaming`}
+                title={isAdded ? 'Already in your hub' : det.name}
+              >
+                <div className="lib-card-icon">
+                  {det.icon
+                    ? <img src={det.icon} alt={det.name} draggable={false} />
+                    : <span className="lib-card-fallback">{det.name[0]}</span>
+                  }
+                </div>
+                <div className="lib-card-overlay">
+                  <p className="lib-card-name">{det.name}</p>
+                  {isAdded && <span className="lib-card-added-badge">✓</span>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Scanning placeholder (no apps found yet) */}
+      {loading && streamedApps.length === 0 && (
         <div className="page-empty">
           <span className="library-spinner" />
           <p>Scanning registry…</p>
@@ -199,7 +262,7 @@ export default function Library() {
         </div>
       )}
 
-      {/* Grid */}
+      {/* Full list after scan */}
       {!loading && scannedApps.length > 0 && (
         <>
           {(filtered.length === 0 && evApps.length === 0) ? (

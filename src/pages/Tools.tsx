@@ -17,12 +17,255 @@ interface UninstallableApp {
   publisher?: string
 }
 
-type ToolView = 'dashboard' | 'startup' | 'uninstaller' | 'everything' | 'journal'
+type ToolView = 'dashboard' | 'startup' | 'uninstaller' | 'everything' | 'journal' | 'diskmap'
 
 interface ActivityDay {
   date: string
   apps: { name: string; path: string; minutes: number; cpu: number; mem: number }[]
   totalMinutes: number
+}
+
+interface DiskEntry {
+  path: string
+  name: string
+  size: number
+  is_dir: boolean
+}
+
+interface DirScanResult {
+  path: string
+  entries: DiskEntry[]
+  total_size: number
+}
+
+interface AggEntry {
+  path: string
+  name: string
+  size: number
+  is_dir: boolean
+  file_count: number
+}
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1_099_511_627_776) return (bytes / 1_099_511_627_776).toFixed(2) + ' TB'
+  if (bytes >= 1_073_741_824) return (bytes / 1_073_741_824).toFixed(1) + ' GB'
+  if (bytes >= 1_048_576) return (bytes / 1_048_576).toFixed(0) + ' MB'
+  if (bytes >= 1_024) return (bytes / 1_024).toFixed(0) + ' KB'
+  return bytes + ' B'
+}
+
+function DiskMapView({ onBack }: { onBack: () => void }) {
+  const [drives] = useState(['C', 'D', 'E', 'F'])
+  const [selectedDrive, setSelectedDrive] = useState('C')
+  const [scanning, setScanning] = useState(false)
+  const [result, setResult] = useState<DirScanResult | null>(null)
+  const [currentPrefix, setCurrentPrefix] = useState('')
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<DiskEntry | null>(null)
+
+  // Aggregate entries at the current depth level
+  const getViewEntries = (): AggEntry[] => {
+    if (!result) return []
+
+    const prefix = currentPrefix ? `${currentPrefix}\\` : ''
+    const map = new Map<string, { size: number; count: number; path: string }>()
+
+    for (const e of result.entries) {
+      if (!e.path.toLowerCase().startsWith(prefix.toLowerCase())) continue
+      const rest = e.path.slice(prefix.length)
+      if (!rest) continue
+
+      const parts = rest.split('\\')
+      const key = parts[0]
+
+      if (!key) continue
+      const fullPath = `${selectedDrive}:\\${prefix}${key}`
+
+      const existing = map.get(key)
+      if (existing) {
+        existing.size += e.size
+        existing.count += 1
+      } else {
+        map.set(key, { size: e.size, count: 1, path: fullPath })
+      }
+    }
+
+    return Array.from(map.entries())
+      .map(([name, data]) => ({
+        path: data.path,
+        name,
+        size: data.size,
+        is_dir: true,
+        file_count: data.count,
+      }))
+      .sort((a, b) => b.size - a.size)
+  }
+
+  const viewEntries = getViewEntries()
+  const maxSize = Math.max(...viewEntries.map(e => e.size), 1)
+
+  const startScan = async () => {
+    setScanning(true)
+    setResult(null)
+    setCurrentPrefix('')
+    try {
+      const t0 = performance.now()
+      const res = await invoke<DirScanResult>('scan_disk', { drive: selectedDrive })
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(1)
+      console.log(`MFT scan completed in ${elapsed}s — ${res.entries.length} files, ${formatSize(res.total_size)}`)
+      setResult(res)
+    } catch (e) {
+      console.error('Scan failed:', e)
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  const handleDelete = async (entry: { path: string; is_dir: boolean }) => {
+    setDeleting(entry.path)
+    try {
+      await invoke('delete_disk_entry', { path: entry.path, isDir: entry.is_dir })
+    } catch (e) {
+      console.error('Delete failed:', e)
+    } finally {
+      setDeleting(null)
+      setConfirmDelete(null)
+    }
+  }
+
+  return (
+    <div className="page tools-page">
+      <div className="page-header">
+        <div className="header-row">
+          <button className="btn-back-tools" onClick={onBack}>← Back to Tools</button>
+        </div>
+        <h1 className="page-title">Disk Space Map</h1>
+        <p className="page-subtitle">MFT-based scanner — parses $MFT directly for instant results</p>
+
+        <div className="diskmap-controls">
+          <div className="diskmap-drive-select">
+            <span className="diskmap-label">Drive:</span>
+            <div className="diskmap-drives">
+              {drives.map(d => (
+                <button
+                  key={d}
+                  className={`diskmap-drive-btn ${selectedDrive === d ? 'active' : ''}`}
+                  onClick={() => setSelectedDrive(d)}
+                  disabled={scanning}
+                >
+                  {d}:\
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="btn-primary" onClick={startScan} disabled={scanning}>
+            {scanning ? 'Scanning…' : result ? '⟳ Rescan' : '⟳ Scan'}
+          </button>
+          {result && (
+            <span className="diskmap-info-text">
+              {result.entries.length.toLocaleString()} files · {formatSize(result.total_size)} total
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Scanning progress */}
+      {scanning && (
+        <div className="tool-loading">
+          <span className="library-spinner" />
+          <p>Parsing MFT on {selectedDrive}:\…</p>
+          <p className="empty-hint">Reading raw $MFT — this takes seconds on modern hardware</p>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!scanning && !result && (
+        <div className="page-empty">
+          <span className="empty-icon">💾</span>
+          <p>Select a drive and click Scan</p>
+          <p className="empty-hint">Parses the NTFS Master File Table directly — instant results like WizTree</p>
+        </div>
+      )}
+
+      {/* Results */}
+      {result && !scanning && (
+        <div className="diskmap-results">
+          {/* Breadcrumb */}
+          <div className="diskmap-breadcrumb">
+            <span className="diskmap-breadcrumb-item" onClick={() => setCurrentPrefix('')}>
+              {selectedDrive}:\
+            </span>
+            {currentPrefix.split('\\').filter(Boolean).map((part, i, arr) => {
+              const prefix = arr.slice(0, i + 1).join('\\')
+              return (
+                <span key={i}>
+                  <span className="diskmap-breadcrumb-sep">›</span>
+                  <span className="diskmap-breadcrumb-item" onClick={() => setCurrentPrefix(prefix)}>
+                    {part}
+                  </span>
+                </span>
+              )
+            })}
+          </div>
+
+          <div className="diskmap-list">
+            {viewEntries.length === 0 ? (
+              <div className="tool-empty">No entries in this folder</div>
+            ) : (
+              viewEntries.slice(0, 2000).map(entry => {
+                const barWidth = (entry.size / maxSize) * 100
+                return (
+                  <div
+                    key={entry.path}
+                    className="diskmap-row"
+                    onClick={() => setCurrentPrefix(currentPrefix ? `${currentPrefix}\\${entry.name}` : entry.name)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="diskmap-row-bar" style={{ width: `${barWidth}%` }} />
+                    <div className="diskmap-row-info">
+                      <span className="diskmap-row-name" title={entry.path}>
+                        {entry.is_dir ? '📁 ' : '📄 '}{entry.name}
+                      </span>
+                      <span className="diskmap-row-meta">
+                        <span className="diskmap-row-size">{formatSize(entry.size)}</span>
+                        <span className="diskmap-row-files">{entry.file_count} items</span>
+                      </span>
+                    </div>
+                    <div className="diskmap-row-pct">{((entry.size / result.total_size) * 100).toFixed(1)}%</div>
+                    <button
+                      className="diskmap-delete-btn"
+                      title="Delete"
+                      onClick={e => { e.stopPropagation(); setConfirmDelete(entry) }}
+                      disabled={deleting === entry.path}
+                    >
+                      {deleting === entry.path ? '…' : '🗑'}
+                    </button>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {confirmDelete && (
+        <div className="lib-picker-backdrop" onClick={() => setConfirmDelete(null)}>
+          <div className="lib-picker" onClick={e => e.stopPropagation()} style={{ width: 420, gap: 16 }}>
+            <h3 style={{ fontSize: 16 }}>Delete?</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+              Permanently delete <strong>{confirmDelete.name}</strong> ({formatSize(confirmDelete.size)})
+            </p>
+            <p style={{ fontSize: 12, color: '#ff5f57' }}>This action cannot be undone.</p>
+            <div className="lib-picker-footer">
+              <button className="btn-secondary" onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button className="btn-danger" onClick={() => handleDelete(confirmDelete)}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ActivityJournal({ onBack }: { onBack: () => void }) {
@@ -364,13 +607,12 @@ export default function Tools() {
             </div>
           </button>
 
-          <button className="tool-tile hub-card-base disabled" title="Coming Soon">
-            <span className="tool-tile-icon">🔍</span>
+          <button className="tool-tile hub-card-base" onClick={() => setView('diskmap')}>
+            <span className="tool-tile-icon">💾</span>
             <div className="tool-tile-info">
               <p className="tool-tile-name">Disk Space Map</p>
               <p className="tool-tile-desc">Visualize what eats your disk</p>
             </div>
-            <span className="tool-tile-badge">Soon</span>
           </button>
         </div>
       </div>
@@ -480,6 +722,11 @@ export default function Tools() {
         </div>
       </div>
     )
+  }
+
+  // ── Disk Map View ─────────────────────────────────────────────────────────
+  if (view === 'diskmap') {
+    return <DiskMapView onBack={() => setView('dashboard')} />
   }
 
   // ── Uninstaller View ──────────────────────────────────────────────────────

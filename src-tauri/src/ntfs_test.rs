@@ -1,0 +1,1 @@
+use ntfs::Ntfs; pub fn test() { let _ = Ntfs::new(); }
