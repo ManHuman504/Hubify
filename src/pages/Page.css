@@ -6,6 +6,17 @@
   overflow-y: auto;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .page {
+    animation: page-enter 0.2s ease-out;
+  }
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .page-header {
   margin-bottom: 28px;
 }

@@ -8,61 +8,61 @@
 }
 
 .fr-card {
-  width: 320px;
+  width: 380px;
   background: #1e1e24;
   border: 1px solid #333;
-  border-radius: 8px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 32px 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
 .fr-logo {
-  width: 40px;
-  height: 40px;
-  background: #7c6fff;
-  border-radius: 8px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  font-weight: bold;
-  color: white;
+}
+
+.fr-logo-img {
+  width: 44px;
+  height: 44px;
+  display: block;
 }
 
 .fr-title {
-  font-size: 16px;
+  font-size: 17px;
   color: #f0f0f4;
   margin: 0;
   text-align: center;
+  font-weight: 600;
 }
 
 .fr-desc {
-  font-size: 12px;
+  font-size: 12.5px;
   color: #aaa;
   text-align: center;
-  line-height: 1.4;
+  line-height: 1.5;
   margin: 0;
 }
 
 .fr-gif {
   display: flex;
   justify-content: center;
+  width: 100%;
 }
 
-.fr-placeholder {
-  width: 160px;
-  height: 90px;
-  border-radius: 6px;
-  background: #2a2a32;
+.fr-gif-img {
+  width: 280px;
+  height: auto;
+  max-height: 180px;
+  border-radius: 8px;
   border: 1px solid #333;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #777;
-  font-size: 12px;
+  object-fit: contain;
+  background: #16161c;
 }
 
 /* Setup */
@@ -76,7 +76,7 @@
   background: #2a2a32;
   border-radius: 2px;
   overflow: hidden;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .fr-bar {
@@ -87,51 +87,131 @@
 
 .fr-steps {
   display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
 .fr-step {
-  flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 4px;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
   background: #2a2a32;
+  min-height: 20px;
 }
 
-.fr-step-ok {
-  background: #2a2a32;
-}
-
-.fr-dot {
-  width: 6px;
-  height: 6px;
+.fr-step-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
   border-radius: 50%;
-  background: #7c6fff;
+}
+
+.fr-step-label {
+  font-size: 12px;
+  color: #ccc;
+}
+
+.fr-step-msg {
+  font-size: 11px;
+  color: #777;
+  margin-left: auto;
+}
+
+/* Status colors */
+.fr-step-pending .fr-step-icon {
+  color: #555;
+  border: 2px solid #444;
+  font-size: 10px;
+}
+.fr-step-pending .fr-step-label {
+  color: #666;
+}
+
+.fr-step-running .fr-step-icon {
+  color: #7c6fff;
+  animation: fr-spin 1s linear infinite;
+}
+.fr-step-running .fr-step-label {
+  color: #f0f0f4;
+}
+
+.fr-step-ok .fr-step-icon {
+  background: #1a6b3c;
+  color: #4ade80;
+  border: none;
+  font-size: 12px;
+}
+.fr-step-ok .fr-step-label {
+  color: #e0e0e4;
+}
+
+.fr-step-error .fr-step-icon {
+  background: #6b1a1a;
+  color: #f87171;
+  border: none;
+  font-size: 12px;
+}
+.fr-step-error .fr-step-label {
+  color: #f87171;
+}
+
+.fr-step-skip .fr-step-icon {
+  color: #555;
 }
 
 .fr-btn {
   width: 100%;
-  padding: 8px;
+  padding: 9px;
   background: #7c6fff;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   color: white;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.15s;
+}
+.fr-btn:hover {
+  background: #6a5ce6;
+}
+
+.fr-guard-btns {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fr-btn-allow {
+  background: #1a6b3c;
+}
+.fr-btn-allow:hover {
+  background: #228b4e;
+}
+
+.fr-btn-deny {
+  background: #5a1a1a;
+}
+.fr-btn-deny:hover {
+  background: #7a2222;
 }
 
 .fr-spinner {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border: 2px solid #7c6fffb0;
   border-top: 2px solid #7c6fff;
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: fr-spin 1s linear infinite;
 }
 
-@keyframes spin {
+@keyframes fr-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }

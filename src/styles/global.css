@@ -16,6 +16,25 @@ body {
   overflow: hidden;
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  font-weight: 450;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 700;
+}
+
+strong, b {
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    transition: background-color 0.2s ease;
+  }
+
+  .app {
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  }
 }
 
 #root {

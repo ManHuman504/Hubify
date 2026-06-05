@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, createContext, useContext } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -21,6 +21,9 @@ import { AppsProvider } from './hooks/useApps'
 
 export type Page = 'home' | 'library' | 'store' | 'tools' | 'tray' | 'analytics' | 'sync' | 'settings'
 
+const AppLoadingContext = createContext<{ loading: boolean; setLoading: (v: boolean) => void }>({ loading: false, setLoading: () => {} })
+export const useAppLoading = () => useContext(AppLoadingContext)
+
 interface SetupStatus {
   completed: boolean
   winget_ok: boolean
@@ -30,6 +33,7 @@ interface SetupStatus {
 function MainApp() {
   const [page, setPage] = useState<Page>('home')
   const [visited, setVisited] = useState<Set<Page>>(new Set(['home']))
+  const [loading, setLoading] = useState(false)
 
   const navigate = (p: Page) => {
     setPage(p)
@@ -85,39 +89,42 @@ function MainApp() {
 
   if (!setupDone) {
     return (
-      <div className="app">
-        <Titlebar />
-        <FirstRun onComplete={handleSetupComplete} />
-      </div>
+        <div className="app">
+          <Titlebar />
+          <FirstRun onComplete={handleSetupComplete} />
+        </div>
     )
   }
 
   return (
     <AppsProvider>
-      <ThemeEngine />
-      <div className="app">
-        <Titlebar />
-        <div className="app-body">
-          <Sidebar active={page} onNavigate={navigate} />
-          <main className="main-content">
-            {visited.has('home') && <div className={`page-wrap${page !== 'home' ? ' hidden' : ''}`}><Home /></div>}
-            {visited.has('library') && <div className={`page-wrap${page !== 'library' ? ' hidden' : ''}`}><Library /></div>}
-            {visited.has('store') && <div className={`page-wrap${page !== 'store' ? ' hidden' : ''}`}><Store /></div>}
-            {visited.has('tools') && <div className={`page-wrap${page !== 'tools' ? ' hidden' : ''}`}><Tools /></div>}
-            {visited.has('tray') && <div className={`page-wrap${page !== 'tray' ? ' hidden' : ''}`}><Tray /></div>}
-            {visited.has('analytics') && <div className={`page-wrap${page !== 'analytics' ? ' hidden' : ''}`}><Analytics /></div>}
-            {visited.has('sync') && <div className={`page-wrap${page !== 'sync' ? ' hidden' : ''}`}><Sync /></div>}
-            {visited.has('settings') && <div className={`page-wrap${page !== 'settings' ? ' hidden' : ''}`}><Settings /></div>}
-          </main>
+      <AppLoadingContext.Provider value={{ loading, setLoading }}>
+        <ThemeEngine />
+        <div className={`app${loading ? ' app-loading' : ''}`}>
+          <Titlebar />
+          <div className="app-body">
+            <Sidebar active={page} onNavigate={navigate} />
+            <main className="main-content">
+              {visited.has('home') && <div className={`page-wrap${page !== 'home' ? ' hidden' : ''}`}><Home /></div>}
+              {visited.has('library') && <div className={`page-wrap${page !== 'library' ? ' hidden' : ''}`}><Library /></div>}
+              {visited.has('store') && <div className={`page-wrap${page !== 'store' ? ' hidden' : ''}`}><Store /></div>}
+              {visited.has('tools') && <div className={`page-wrap${page !== 'tools' ? ' hidden' : ''}`}><Tools /></div>}
+              {visited.has('tray') && <div className={`page-wrap${page !== 'tray' ? ' hidden' : ''}`}><Tray /></div>}
+              {visited.has('analytics') && <div className={`page-wrap${page !== 'analytics' ? ' hidden' : ''}`}><Analytics /></div>}
+              {visited.has('sync') && <div className={`page-wrap${page !== 'sync' ? ' hidden' : ''}`}><Sync /></div>}
+              {visited.has('settings') && <div className={`page-wrap${page !== 'settings' ? ' hidden' : ''}`}><Settings /></div>}
+            </main>
+          </div>
         </div>
-      </div>
-      {updateInfo && (
-        <UpdateModal
-          info={updateInfo}
-          onClose={() => setUpdateInfo(null)}
-          onUpdateInstalled={() => {}}
-        />
-      )}
+        {updateInfo && (
+          <UpdateModal
+            info={updateInfo}
+            onClose={() => setUpdateInfo(null)}
+            onUpdateInstalled={() => {}}
+          />
+        )}
+        <div className={`app-bar${loading ? ' active' : ''}`} />
+      </AppLoadingContext.Provider>
     </AppsProvider>
   )
 }

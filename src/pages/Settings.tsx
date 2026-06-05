@@ -231,7 +231,7 @@ export default function Settings() {
 
   const handleSelectPreset = async (id: string) => {
     await setTheme(id)
-    if (id === 'dark' || id === 'light' || id === 'neo') {
+    if (['dark', 'light', 'neo', 'neo-retro', 'midnight', 'sunset', 'forest', 'nord', 'synthwave'].includes(id)) {
       setEditingId(null)
       setEditingVars({})
       setEditName('')
@@ -299,6 +299,30 @@ export default function Settings() {
                       className={`theme-preset-btn ${theme.active === 'neo' ? 'active' : ''}`}
                       onClick={() => handleSelectPreset('neo')}
                     >Neo</button>
+                    <button
+                      className={`theme-preset-btn ${theme.active === 'neo-retro' ? 'active' : ''}`}
+                      onClick={() => handleSelectPreset('neo-retro')}
+                    >Neo-Retro</button>
+                    <button
+                      className={`theme-preset-btn ${theme.active === 'midnight' ? 'active' : ''}`}
+                      onClick={() => handleSelectPreset('midnight')}
+                    >Midnight</button>
+                    <button
+                      className={`theme-preset-btn ${theme.active === 'sunset' ? 'active' : ''}`}
+                      onClick={() => handleSelectPreset('sunset')}
+                    >Sunset</button>
+                    <button
+                      className={`theme-preset-btn ${theme.active === 'forest' ? 'active' : ''}`}
+                      onClick={() => handleSelectPreset('forest')}
+                    >Forest</button>
+                    <button
+                      className={`theme-preset-btn ${theme.active === 'nord' ? 'active' : ''}`}
+                      onClick={() => handleSelectPreset('nord')}
+                    >Nord</button>
+                    <button
+                      className={`theme-preset-btn ${theme.active === 'synthwave' ? 'active' : ''}`}
+                      onClick={() => handleSelectPreset('synthwave')}
+                    >Synthwave</button>
                     {theme.custom_themes.map(ct => (
                       <button
                         key={ct.id}

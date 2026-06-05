@@ -24,6 +24,10 @@
   font-family: inherit;
   padding: 0;
   transition: color 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
 }
 .detail-back:hover { color: var(--text-primary); }
 
@@ -82,8 +86,8 @@
 }
 
 .detail-name {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 2px;
 }

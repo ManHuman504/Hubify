@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { useApps } from '../hooks/useApps'
+import { useAppLoading } from '../App'
 import './Page.css'
 import './Tools.css'
 
@@ -62,6 +63,7 @@ function DiskMapView({ onBack }: { onBack: () => void }) {
   const [currentPrefix, setCurrentPrefix] = useState('')
   const [deleting, setDeleting] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<DiskEntry | null>(null)
+  const { setLoading } = useAppLoading()
 
   // Aggregate entries at the current depth level
   const getViewEntries = (): AggEntry[] => {
@@ -108,6 +110,7 @@ function DiskMapView({ onBack }: { onBack: () => void }) {
     setScanning(true)
     setResult(null)
     setCurrentPrefix('')
+    setLoading(true)
     try {
       const t0 = performance.now()
       const res = await invoke<DirScanResult>('scan_disk', { drive: selectedDrive })
@@ -118,11 +121,13 @@ function DiskMapView({ onBack }: { onBack: () => void }) {
       console.error('Scan failed:', e)
     } finally {
       setScanning(false)
+      setLoading(false)
     }
   }
 
   const handleDelete = async (entry: { path: string; is_dir: boolean }) => {
     setDeleting(entry.path)
+    setLoading(true)
     try {
       await invoke('delete_disk_entry', { path: entry.path, isDir: entry.is_dir })
     } catch (e) {
@@ -130,6 +135,7 @@ function DiskMapView({ onBack }: { onBack: () => void }) {
     } finally {
       setDeleting(null)
       setConfirmDelete(null)
+      setLoading(false)
     }
   }
 
@@ -607,13 +613,14 @@ export default function Tools() {
             </div>
           </button>
 
-          <button className="tool-tile hub-card-base" onClick={() => setView('diskmap')}>
+          <div className="tool-tile hub-card-base disabled">
+            <span className="tool-tile-badge">WIP</span>
             <span className="tool-tile-icon">💾</span>
             <div className="tool-tile-info">
               <p className="tool-tile-name">Disk Space Map</p>
-              <p className="tool-tile-desc">Visualize what eats your disk</p>
+              <p className="tool-tile-desc">Ещё в разработке — будет готово в одном из следующих обновлений</p>
             </div>
-          </button>
+          </div>
         </div>
       </div>
     )

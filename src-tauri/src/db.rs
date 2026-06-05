@@ -115,7 +115,7 @@ pub fn get_daily_activity(app_handle: &tauri::AppHandle, days: i64) -> Result<Ve
     let conn = guard.as_ref().unwrap();
     let mut stmt = conn.prepare(
         "SELECT DATE(timestamp) as day,
-                ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 1.0 / 60, 1) as total_minutes,
+                ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 15.0 / 60, 1) as total_minutes,
                 COUNT(DISTINCT strftime('%H', timestamp) || '-' || app_path) as sessions
          FROM usage_stats
          WHERE timestamp >= DATE('now', ?1)
@@ -139,7 +139,7 @@ pub fn get_app_stats(app_handle: &tauri::AppHandle) -> Result<Vec<AppStat>> {
     let conn = guard.as_ref().unwrap();
     let mut stmt = conn.prepare(
         "SELECT app_path,
-                ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 1.0 / 60, 1) as total_minutes,
+                ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 15.0 / 60, 1) as total_minutes,
                 ROUND(AVG(cpu_usage), 1) as avg_cpu,
                 ROUND(AVG(memory_mb), 1) as avg_mem
          FROM usage_stats
@@ -165,7 +165,7 @@ pub fn get_today_summary(app_handle: &tauri::AppHandle) -> Result<TodaySummary> 
     let guard = get_or_init_conn(app_handle)?;
     let conn = guard.as_ref().unwrap();
     let total: f64 = conn.query_row(
-        "SELECT ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 1.0 / 60, 1)
+        "SELECT ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 15.0 / 60, 1)
          FROM usage_stats WHERE DATE(timestamp) = DATE('now')",
         [], |row| row.get(0),
     ).unwrap_or(0.0);
@@ -188,7 +188,7 @@ pub fn get_app_daily_detail(app_handle: &tauri::AppHandle, app_path: &str, days:
     let conn = guard.as_ref().unwrap();
     let mut stmt = conn.prepare(
         "SELECT DATE(timestamp) as day,
-                ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 1.0 / 60, 1) as total_minutes,
+                ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 15.0 / 60, 1) as total_minutes,
                 ROUND(AVG(cpu_usage), 1) as avg_cpu,
                 ROUND(AVG(memory_mb), 1) as avg_mem
          FROM usage_stats
@@ -238,7 +238,7 @@ pub fn get_app_hourly(app_handle: &tauri::AppHandle, app_path: &str) -> Result<V
     let conn = guard.as_ref().unwrap();
     let mut stmt = conn.prepare(
         "SELECT strftime('%H:00', timestamp) as hour,
-                ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 1.0 / 60, 2) as mins
+                ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 15.0 / 60, 2) as mins
          FROM usage_stats
          WHERE app_path = ?1 AND DATE(timestamp) = DATE('now')
          GROUP BY hour

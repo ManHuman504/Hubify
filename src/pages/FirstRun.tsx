@@ -18,17 +18,32 @@ interface StepState {
 }
 
 const SETUP_STEPS: { id: string; label: string }[] = [
-  { id: 'winget',  label: 'winget' },
-  { id: 'sources', label: 'sources' },
-  { id: 'scan',    label: 'scan' },
+  { id: 'winget',  label: 'Package Manager (winget)' },
+  { id: 'sources', label: 'Updating Sources' },
+  { id: 'scan',    label: 'Scanning for Apps' },
 ]
 
 interface Props {
   onComplete: () => void
 }
 
+function StepIcon({ status }: { status: StepState['status'] }) {
+  switch (status) {
+    case 'ok':
+      return <span className="fr-step-icon">&#x2713;</span>
+    case 'running':
+      return <span className="fr-step-icon">&#x21bb;</span>
+    case 'error':
+      return <span className="fr-step-icon">&#x2717;</span>
+    case 'skip':
+      return <span className="fr-step-icon" style={{ color: '#555' }}>&ndash;</span>
+    default:
+      return <span className="fr-step-icon" style={{ color: '#555' }}>&#x25CB;</span>
+  }
+}
+
 export default function FirstRun({ onComplete }: Props) {
-  const [phase, setPhase] = useState<'welcome' | 'tray'>('welcome')
+  const [phase, setPhase] = useState<'welcome' | 'tray' | 'guard'>('welcome')
   const [setupSteps, setSetupSteps] = useState<StepState[]>(
     SETUP_STEPS.map(s => ({ ...s, status: 'pending', message: '' }))
   )
@@ -55,7 +70,7 @@ export default function FirstRun({ onComplete }: Props) {
     try {
       await invoke('run_first_setup')
     } catch (_e: unknown) {
-      // Setup error handled silently — setup will show as incomplete
+      // Setup error handled silently
     }
 
     if (unlistenRef.current) {
@@ -82,9 +97,11 @@ export default function FirstRun({ onComplete }: Props) {
     return (
       <div className="fr-root">
         <div className="fr-card">
-          <div className="fr-logo">H</div>
+          <div className="fr-logo">
+            <img src="/Hubify.svg" alt="Hubify" className="fr-logo-img" />
+          </div>
           <h1 className="fr-title">Welcome to Hubify</h1>
-          
+
           <div className="fr-setup">
             <div className="fr-progress">
               <div className="fr-bar" style={{ width: `${setupPercent}%` }} />
@@ -92,8 +109,9 @@ export default function FirstRun({ onComplete }: Props) {
             <div className="fr-steps">
               {setupSteps.map(step => (
                 <div key={step.id} className={`fr-step fr-step-${step.status}`}>
-                  <span className="fr-dot" />
-                  <span>{step.label}</span>
+                  <StepIcon status={step.status} />
+                  <span className="fr-step-label">{step.label}</span>
+                  {step.message && <span className="fr-step-msg">{step.message}</span>}
                 </div>
               ))}
             </div>
@@ -116,11 +134,13 @@ export default function FirstRun({ onComplete }: Props) {
     return (
       <div className="fr-root">
         <div className="fr-card">
-          <div className="fr-logo">H</div>
+          <div className="fr-logo">
+            <img src="/Hubify.svg" alt="Hubify" className="fr-logo-img" />
+          </div>
           <h1 className="fr-title">Quick Tray Access</h1>
-          
+
           <div className="fr-gif">
-            <div className="fr-placeholder">tray</div>
+            <img src="/tray.gif" alt="Tray preview" className="fr-gif-img" />
           </div>
 
           <p className="fr-desc">
@@ -128,11 +148,48 @@ export default function FirstRun({ onComplete }: Props) {
             Drag the icon to your taskbar to pin it.
           </p>
 
-          <button className="fr-btn" onClick={onComplete}>
-            Finish →
+          <button className="fr-btn" onClick={() => setPhase('guard')}>
+            Next →
           </button>
         </div>
       </div>
     )
   }
+
+  // ── Page 3: Guard Startup ──────────────────────────────────
+  return (
+    <div className="fr-root">
+      <div className="fr-card">
+        <div className="fr-logo">
+          <img src="/Hubify.svg" alt="Hubify" className="fr-logo-img" />
+        </div>
+        <h1 className="fr-title">Guard Startup</h1>
+
+        <div className="fr-gif">
+          <img src="/guard.gif" alt="Guard preview" className="fr-gif-img" />
+        </div>
+
+        <p className="fr-desc">
+          Hubify can monitor and protect your startup programs.
+          You will be notified whenever an app adds itself to autostart,
+          keeping unwanted programs out.
+        </p>
+
+        <div className="fr-guard-btns">
+          <button className="fr-btn fr-btn-allow" onClick={async () => {
+            await invoke('set_guardian_enabled', { enabled: true })
+            onComplete()
+          }}>
+            Allow ✓
+          </button>
+          <button className="fr-btn fr-btn-deny" onClick={async () => {
+            await invoke('set_guardian_enabled', { enabled: false })
+            onComplete()
+          }}>
+            Deny
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
