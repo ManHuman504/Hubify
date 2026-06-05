@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="public/hubify.svg" width="80" alt="Hubify" />
+  <img src="public/hubify.png" width="80" alt="Hubify" />
   <h1 align="center">Hubify</h1>
   <p align="center">A high-performance, native Windows application launcher built with Tauri & Rust</p>
 
