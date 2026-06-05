@@ -339,22 +339,8 @@ fn focus_or_launch(path: &str) -> Result<(), String> {
         }
     }
 
-    // Try direct spawn first so the app becomes a child process of Hubify
-    let path_lower = path.to_lowercase();
-    if path_lower.ends_with(".exe") || path_lower.ends_with(".bat") || path_lower.ends_with(".cmd") {
-        if let Ok(child) = std::process::Command::new(path).spawn() {
-            job::assign(&child);
-            return Ok(());
-        }
-    }
-
-    // Fallback: use cmd start for protocol URLs or non-executables
-    let child = std::process::Command::new("cmd")
-        .args(["/C", "start", "", path])
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    job::assign(&child);
-    Ok(())
+    // Launch via CreateProcess + Job Object so it becomes a child of Hubify
+    job::launch_process(path)
 }
 
 #[tauri::command]
@@ -1462,16 +1448,7 @@ pub fn run() {
                                     let _ = app_handle_for_ipc.emit("show_window", ());
                                 } else if buf.starts_with("LAUNCH:") {
                                     let path = buf.trim_start_matches("LAUNCH:").trim_matches('"').to_string();
-                                    let path_lower = path.to_lowercase();
-                                    if path_lower.ends_with(".exe") || path_lower.ends_with(".bat") || path_lower.ends_with(".cmd") {
-                                        if let Ok(child) = std::process::Command::new(&path).spawn() {
-                                            job::assign(&child);
-                                        }
-                                    } else {
-                                        let _ = std::process::Command::new("cmd").args(["/C", "start", "", &path]).spawn().map(|child| {
-                                            job::assign(&child);
-                                        });
-                                    }
+                                    let _ = job::launch_process(&path);
                                 }
                             }
                         }
@@ -1518,17 +1495,7 @@ pub fn run() {
             keybinds::register_all(&app_handle);
 
             if let Some(path) = initial_launch_path {
-                let path = path.trim_matches('"');
-                let path_lower = path.to_lowercase();
-                if path_lower.ends_with(".exe") || path_lower.ends_with(".bat") || path_lower.ends_with(".cmd") {
-                    if let Ok(child) = std::process::Command::new(path).spawn() {
-                        job::assign(&child);
-                    }
-                } else {
-                    let _ = std::process::Command::new("cmd").args(["/C", "start", "", path]).spawn().map(|child| {
-                        job::assign(&child);
-                    });
-                }
+                let _ = job::launch_process(path.trim_matches('"'));
             }
 
             let tray_menu = Menu::new(&app_handle)?;

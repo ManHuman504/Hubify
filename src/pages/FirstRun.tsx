@@ -28,12 +28,11 @@ interface Props {
 }
 
 export default function FirstRun({ onComplete }: Props) {
-  const [phase, setPhase] = useState<'welcome' | 'tray' | 'process'>('welcome')
+  const [phase, setPhase] = useState<'welcome' | 'tray'>('welcome')
   const [setupSteps, setSetupSteps] = useState<StepState[]>(
     SETUP_STEPS.map(s => ({ ...s, status: 'pending', message: '' }))
   )
   const [setupPercent, setSetupPercent] = useState(0)
-  const [setupError, setSetupError] = useState<string | null>(null)
   const [setupComplete, setSetupComplete] = useState(false)
   const unlistenRef = useRef<(() => void) | null>(null)
 
@@ -55,9 +54,8 @@ export default function FirstRun({ onComplete }: Props) {
 
     try {
       await invoke('run_first_setup')
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setSetupError(msg)
+    } catch (_e: unknown) {
+      // Setup error handled silently — setup will show as incomplete
     }
 
     if (unlistenRef.current) {
@@ -130,34 +128,11 @@ export default function FirstRun({ onComplete }: Props) {
             Drag the icon to your taskbar to pin it.
           </p>
 
-          <button className="fr-btn" onClick={() => setPhase('process')}>
-            Next →
+          <button className="fr-btn" onClick={onComplete}>
+            Finish →
           </button>
         </div>
       </div>
     )
   }
-
-  // ── Page 3: Process Tree ─────────────────────────────────
-  return (
-    <div className="fr-root">
-      <div className="fr-card">
-        <div className="fr-logo">H</div>
-        <h1 className="fr-title">Everything in One Tree</h1>
-        
-        <div className="fr-gif">
-          <div className="fr-placeholder">processes</div>
-        </div>
-
-        <p className="fr-desc">
-          Create shortcuts for your apps and Hubify will organize all running
-          processes into a single tree.
-        </p>
-
-        <button className="fr-btn" onClick={onComplete}>
-          Finish →
-        </button>
-      </div>
-    </div>
-  )
 }
