@@ -15,7 +15,7 @@ type FilterId = 'all' | string
 export default function Home() {
   const {
     apps, groups, processInfo, scannedApps,
-    addApp, removeApp, launchApp, killApp,
+    addApp, addApps, removeApp, launchApp, killApp,
     moveAppToGroup, addGroup, removeGroup, renameGroup,
   } = useApps()
 
@@ -300,7 +300,10 @@ export default function Home() {
         <AddAppDialog
           groups={groups}
           scanned={scannedApps}
+          apps={apps}
+          currentGroupId={filter !== 'all' ? filter : null}
           onAdd={(path, name, groupId) => addApp(path, name, groupId)}
+          onAddMany={(items, groupId) => addApps(items, groupId)}
           onClose={() => setShowDialog(false)}
         />
       )}

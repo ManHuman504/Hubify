@@ -181,7 +181,7 @@ pub fn install_update(path: &PathBuf) -> Result<(), String> {
 
     match ext.as_deref() {
         Some("msi") | Some("msix") => {
-            std::process::Command::new("msiexec")
+            crate::hidden_cmd("msiexec")
                 .args(["/i", &*path_str, "/qb", "/norestart"])
                 .spawn()
                 .map_err(|e| format!("Failed to launch installer: {}", e))?;

@@ -146,8 +146,8 @@ pub fn register_all(app: &AppHandle) {
         }
     }
 
-    // Global toggle: Ctrl+Shift+H
-    if let Some(shortcut) = parse_shortcut("Ctrl+Shift+H") {
+    // Global toggle: Win+Alt+Space
+    if let Some(shortcut) = parse_shortcut("Win+Alt+Space") {
         let _ = guard.register(shortcut.clone());
         let mut toggle = GLOBAL_HOTKEY.lock().unwrap();
         *toggle = Some(shortcut);

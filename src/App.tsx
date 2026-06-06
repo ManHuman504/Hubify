@@ -48,6 +48,18 @@ function MainApp() {
       .then(s => { setSetupDone(s.completed) })
       .catch(() => { setSetupDone(true) })
 
+    // Cleanup missing apps on startup
+    invoke<string[]>('cleanup_missing_apps').then(removed => {
+      if (removed.length > 0) {
+        console.log('Cleaned up missing apps:', removed)
+      }
+    }).catch(() => {})
+
+    // Periodic cleanup every 5 minutes
+    const cleanupInterval = setInterval(() => {
+      invoke<string[]>('cleanup_missing_apps').catch(() => {})
+    }, 300000)
+
     const unlisten1 = listen('show_window', async () => {
       const win = getCurrentWindow()
       await win.show()
@@ -59,6 +71,7 @@ function MainApp() {
     })
 
     return () => {
+      clearInterval(cleanupInterval)
       unlisten1.then(f => f())
       unlisten2.then(f => f())
     }

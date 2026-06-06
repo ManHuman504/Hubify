@@ -115,7 +115,7 @@ pub fn get_daily_activity(app_handle: &tauri::AppHandle, days: i64) -> Result<Ve
     let conn = guard.as_ref().unwrap();
     let mut stmt = conn.prepare(
         "SELECT DATE(timestamp) as day,
-                ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 15.0 / 60, 1) as total_minutes,
+                CAST(COUNT(DISTINCT strftime('%Y-%m-%d %H:%M', timestamp)) AS REAL) as total_minutes,
                 COUNT(DISTINCT strftime('%H', timestamp) || '-' || app_path) as sessions
          FROM usage_stats
          WHERE timestamp >= DATE('now', ?1)
@@ -165,7 +165,7 @@ pub fn get_today_summary(app_handle: &tauri::AppHandle) -> Result<TodaySummary> 
     let guard = get_or_init_conn(app_handle)?;
     let conn = guard.as_ref().unwrap();
     let total: f64 = conn.query_row(
-        "SELECT ROUND(SUM(CASE WHEN is_active=1 THEN 1 ELSE 0 END) * 15.0 / 60, 1)
+        "SELECT CAST(COUNT(DISTINCT strftime('%Y-%m-%d %H:%M', timestamp)) AS REAL)
          FROM usage_stats WHERE DATE(timestamp) = DATE('now')",
         [], |row| row.get(0),
     ).unwrap_or(0.0);

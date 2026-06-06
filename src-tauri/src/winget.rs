@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WingetPackage {
@@ -23,7 +22,7 @@ pub struct WingetPackageDetail {
 
 /// Check if winget is available on this system
 pub fn is_available() -> bool {
-    Command::new("winget")
+    crate::hidden_cmd("winget")
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -33,7 +32,7 @@ pub fn is_available() -> bool {
 /// Get info about a specific package by id
 #[allow(dead_code)]
 pub fn show(id: &str) -> Option<WingetPackageDetail> {
-    let output = Command::new("winget")
+    let output = crate::hidden_cmd("winget")
         .args(["show", "--id", id, "--exact", "--accept-source-agreements", "--disable-interactivity"])
         .output()
         .ok()?;
@@ -93,7 +92,7 @@ pub fn show(id: &str) -> Option<WingetPackageDetail> {
 
 /// Install a package, returns (success, log)
 pub fn install(id: &str) -> (bool, String) {
-    let output = Command::new("winget")
+    let output = crate::hidden_cmd("winget")
         .args([
             "install",
             "--id", id,
@@ -120,7 +119,7 @@ pub fn install(id: &str) -> (bool, String) {
 
 /// Uninstall a package
 pub fn uninstall(id: &str) -> (bool, String) {
-    let output = Command::new("winget")
+    let output = crate::hidden_cmd("winget")
         .args([
             "uninstall",
             "--id", id,
@@ -146,7 +145,7 @@ pub fn uninstall(id: &str) -> (bool, String) {
 
 /// List installed packages via winget
 pub fn list_installed() -> Vec<WingetPackage> {
-    let output = Command::new("winget")
+    let output = crate::hidden_cmd("winget")
         .args(["list", "--accept-source-agreements", "--disable-interactivity"])
         .output();
 

@@ -43,7 +43,7 @@ pub fn save_state(app_handle: &tauri::AppHandle, state: &SetupState) {
 // ── Tool checks ──────────────────────────────────────────────────────────────
 
 pub fn check_winget() -> bool {
-    std::process::Command::new("winget")
+    crate::hidden_cmd("winget")
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -75,7 +75,7 @@ try {
 }
 "#;
 
-    let output = std::process::Command::new("powershell")
+    let output = crate::hidden_cmd("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
         .output();
 
@@ -93,7 +93,7 @@ try {
 /// Check if Windows Package Manager source is up to date.
 /// Run winget source update silently in background.
 pub fn update_winget_sources() {
-    let _ = std::process::Command::new("winget")
+    let _ = crate::hidden_cmd("winget")
         .args(["source", "update", "--disable-interactivity"])
         .output();
 }

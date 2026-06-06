@@ -11,16 +11,30 @@ mod db;
 mod autostart;
 mod uninstaller;
 mod everything;
+mod indexer;
 mod keybinds;
 mod guardian;
 mod diskmap;
 mod updater;
+mod hw_control;
 
 use store::{App, Group, Store, CustomTheme};
 use db::{DailyActivity, AppStat, TodaySummary};
 use tauri::{Manager, Emitter};
 use window_vibrancy::{apply_mica, apply_acrylic};
 use serde::{Serialize, Deserialize};
+
+#[cfg(target_os = "windows")]
+pub(crate) fn hidden_cmd(program: &str) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new(program);
+    cmd.creation_flags(0x08000000);
+    cmd
+}
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn hidden_cmd(program: &str) -> std::process::Command {
+    std::process::Command::new(program)
+}
 use network::ConnectionInfo;
 use std::thread;
 use tauri::tray::{TrayIconBuilder, MouseButton, MouseButtonState, TrayIconEvent};
@@ -63,6 +77,20 @@ async fn is_indexer_ready() -> bool {
     }).await.unwrap_or(false)
 }
 
+#[tauri::command]
+async fn get_indexed_count() -> i64 {
+    tauri::async_runtime::spawn_blocking(|| {
+        everything::total_indexed()
+    }).await.unwrap_or(0)
+}
+
+#[tauri::command]
+async fn find_steam_games() -> Vec<everything::EverythingResult> {
+    tauri::async_runtime::spawn_blocking(|| {
+        everything::find_steam_games()
+    }).await.unwrap_or_default()
+}
+
 // ── Apps ────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -72,6 +100,7 @@ async fn get_store(app: tauri::AppHandle) -> Store {
     }).await.unwrap_or_else(|_| store::Store {
         apps: vec![], groups: vec![], scanned_apps: vec![],
         theme: store::ThemeConfig::default(),
+        scan_folders: vec![],
         guardian_enabled: true,
         update_check_enabled: true,
     })
@@ -101,6 +130,46 @@ async fn add_app(app: tauri::AppHandle, path: String, name: Option<String>, grou
     }).await.map_err(|e| e.to_string())?
 }
 
+#[derive(Deserialize)]
+struct AddAppItem {
+    path: String,
+    name: Option<String>,
+}
+
+#[tauri::command]
+async fn add_apps(app: tauri::AppHandle, items: Vec<AddAppItem>, group_id: Option<String>) -> Result<Vec<App>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        let mut added = Vec::new();
+
+        for item in &items {
+            let exe_name = std::path::Path::new(&item.path)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "Unknown".into());
+
+            // Skip if already added
+            if s.apps.iter().any(|a| a.path.to_lowercase() == item.path.to_lowercase()) {
+                continue;
+            }
+
+            let entry = App {
+                id: uuid::Uuid::new_v4().to_string(),
+                name: item.name.clone().unwrap_or(exe_name),
+                icon: icon::extract_icon(&item.path),
+                path: item.path.clone(),
+                group_id: group_id.clone(),
+                hotkey: None,
+            };
+            added.push(entry.clone());
+            s.apps.push(entry);
+        }
+
+        store::save(&app, &s);
+        Ok(added)
+    }).await.map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 async fn remove_app(app: tauri::AppHandle, id: String) {
     let _ = tauri::async_runtime::spawn_blocking(move || {
@@ -108,6 +177,24 @@ async fn remove_app(app: tauri::AppHandle, id: String) {
         s.apps.retain(|a| a.id != id);
         store::save(&app, &s);
     }).await;
+}
+
+#[tauri::command]
+async fn cleanup_missing_apps(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut s = store::load(&app);
+        let mut removed = Vec::new();
+        s.apps.retain(|a| {
+            let exists = std::path::Path::new(&a.path).exists();
+            if !exists {
+                removed.push(a.name.clone());
+                println!("Cleanup: removing '{}' — file no longer exists: {}", a.name, a.path);
+            }
+            exists
+        });
+        store::save(&app, &s);
+        Ok(removed)
+    }).await.map_err(|e| e.to_string())?
 }
 
 // ── Theme commands ───────────────────────────────────────────────────────────
@@ -236,10 +323,15 @@ async fn move_app_to_group(app: tauri::AppHandle, app_id: String, group_id: Opti
 }
 
 #[tauri::command]
-async fn launch_app(path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+async fn launch_app(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let launch_result: Result<(), String> = tauri::async_runtime::spawn_blocking(move || {
         focus_or_launch(&path)
-    }).await.map_err(|e| e.to_string())?
+    }).await.map_err(|e| e.to_string())?;
+    launch_result?;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    Ok(())
 }
 
 #[derive(serde::Deserialize)]
@@ -405,7 +497,7 @@ async fn run_uninstall_string(command: String) -> Result<(), String> {
     if parts.is_empty() { return Err("Empty command".into()); }
 
     tauri::async_runtime::spawn_blocking(move || {
-        let mut cmd = std::process::Command::new(&parts[0]);
+        let mut cmd = crate::hidden_cmd(&parts[0]);
         if parts.len() > 1 {
             cmd.args(&parts[1..]);
         }
@@ -475,14 +567,254 @@ async fn rename_group(app: tauri::AppHandle, id: String, name: String) -> Result
     }).await.map_err(|e| e.to_string())?
 }
 
+// ── Scan Folders ─────────────────────────────────────────────────────────────
+
+#[allow(dead_code)]
+#[tauri::command]
+fn add_scan_folder(app: tauri::AppHandle, folder: String) -> Result<(), String> {
+    let mut s = store::load(&app);
+    if !s.scan_folders.contains(&folder) {
+        s.scan_folders.push(folder);
+        store::save(&app, &s);
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+fn remove_scan_folder(app: tauri::AppHandle, folder: String) -> Result<(), String> {
+    let mut s = store::load(&app);
+    s.scan_folders.retain(|f| f != &folder);
+    store::save(&app, &s);
+    Ok(())
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+fn get_scan_folders(app: tauri::AppHandle) -> Vec<String> {
+    store::load(&app).scan_folders
+}
+
+// ── HW Control ───────────────────────────────────────────────────────────────
+
+#[allow(dead_code)]
+#[tauri::command]
+fn get_volume() -> Result<u32, String> {
+    let r = hw_control::get_volume();
+    println!("get_volume => {:?}", r);
+    r
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+fn set_volume(level: u32) -> Result<(), String> {
+    println!("set_volume({})", level);
+    let r = hw_control::set_volume(level);
+    println!("set_volume({}) => {:?}", level, r);
+    r
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+fn get_brightness() -> Result<u32, String> {
+    let r = hw_control::get_brightness();
+    println!("get_brightness => {:?}", r);
+    r
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+fn set_brightness(level: u32) -> Result<(), String> {
+    println!("set_brightness({})", level);
+    let r = hw_control::set_brightness(level);
+    println!("set_brightness({}) => {:?}", level, r);
+    r
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+fn get_audio_devices() -> Result<Vec<hw_control::AudioDevice>, String> {
+    hw_control::get_audio_devices()
+}
+
+#[allow(dead_code)]
+#[tauri::command]
+fn set_audio_device(device_id: String) -> Result<(), String> {
+    hw_control::set_default_audio_device(&device_id)
+}
+
 // ── Auto-detect ──────────────────────────────────────────────────────────────
 
 // DetectedApp is now imported from store
 pub use store::DetectedApp;
 
+fn scan_index_for_exes(app: &tauri::AppHandle, seen_paths: &mut std::collections::HashSet<String>) -> Vec<DetectedApp> {
+    let exclude_dirs = [
+        "_commonredist", "redist", "vc_redist", "vcredist", "directx", "dotnet",
+        "runtime", "node_modules", "resources", "locales", "swiftshader",
+        "d3dcompiler", "eclipse", "jdk", "jre", "java", "sdk",
+    ];
+
+    let is_junk_dir = |path_parts: &[&str]| -> bool {
+        path_parts.iter().any(|p| exclude_dirs.contains(p))
+    };
+
+    let is_junk_name = |name: &str| -> bool {
+        let lower = name.to_lowercase();
+        lower == "install.exe" || lower == "setup.exe" || lower == "uninstall.exe" ||
+        lower.starts_with("unins") || lower.starts_with("uninst") ||
+        lower.contains("setup") || lower.contains("update") ||
+        lower.contains("helper") || lower.contains("crash") ||
+        lower.contains("vc_redist") || lower.contains("vcredist") ||
+        lower.contains("elevation_service") || lower.contains("crashpad") ||
+        lower.contains("notification_helper") || lower.contains("wow_helper") ||
+        lower.contains("proxy") || lower.contains("launcher") ||
+        lower.ends_with("_main.exe")
+    };
+
+    let mut by_name: std::collections::HashMap<String, DetectedApp> = std::collections::HashMap::new();
+
+    // ── Phase A: .lnk from Start Menu / Desktop ──
+    for path_filter in &["start menu\\programs", "desktop"] {
+        if let Ok(entries) = indexer::search_by_path(path_filter, 800, Some(".lnk")) {
+            for entry in entries {
+                let lp = entry.path.to_lowercase();
+                if seen_paths.contains(&lp) { continue; }
+                if is_junk_name(&entry.name.to_lowercase()) { continue; }
+
+                seen_paths.insert(lp);
+                let name = entry.name.trim_end_matches(".lnk").to_string();
+                let icon = icon::extract_icon(&entry.path);
+                by_name.entry(name.clone()).or_insert_with(|| DetectedApp { name, path: entry.path, icon });
+            }
+        }
+    }
+
+    // ── Phase B: .exe from Steam games ──
+    if let Ok(entries) = indexer::search_by_path("steamapps\\common", 1000, Some(".exe")) {
+        for entry in entries {
+            let lp = entry.path.to_lowercase();
+            if seen_paths.contains(&lp) { continue; }
+            let lower_name = entry.name.to_lowercase();
+            if is_junk_name(&lower_name) { continue; }
+
+            let path_parts: Vec<&str> = lp.split('\\').collect();
+            if is_junk_dir(&path_parts) { continue; }
+
+            seen_paths.insert(lp);
+            let name = entry.name.trim_end_matches(".exe").to_string();
+            let icon = icon::extract_icon(&entry.path);
+            by_name.entry(name.clone()).or_insert_with(|| DetectedApp { name, path: entry.path, icon });
+        }
+    }
+
+    // ── Phase C: .exe from Program Files — only main exe per folder ──
+    let mut pf_candidates: std::collections::HashMap<String, Vec<indexer::IndexEntry>> = std::collections::HashMap::new();
+    if let Ok(entries) = indexer::search_by_path("program files", 2000, Some(".exe")) {
+        for entry in entries {
+            let lp = entry.path.to_lowercase();
+            if seen_paths.contains(&lp) { continue; }
+            let lower_name = entry.name.to_lowercase();
+            if is_junk_name(&lower_name) { continue; }
+
+            let path_parts: Vec<&str> = lp.split('\\').collect();
+            if is_junk_dir(&path_parts) { continue; }
+            if path_parts.iter().any(|p| p.contains("windowsapps")) { continue; }
+
+            let pf_idx = path_parts.iter().position(|p| p.contains("program files"));
+            let Some(idx) = pf_idx else { continue; };
+            let depth = path_parts.len() - idx;
+            if depth < 3 { continue; }
+
+            // Group by Vendor\AppName (2 levels after Program Files)
+            let v_start = idx + 1;
+            let v_count = 2.min(depth - v_start);
+            let app_key = path_parts[v_start..(v_start + v_count)].join("\\");
+            pf_candidates.entry(app_key).or_default().push(entry.clone());
+        }
+    }
+
+    for (folder_key, mut exes) in pf_candidates {
+        exes.sort_by(|a, b| {
+            let a_size = std::fs::metadata(&a.path).map(|m| m.len()).unwrap_or(0);
+            let b_size = std::fs::metadata(&b.path).map(|m| m.len()).unwrap_or(0);
+            b_size.cmp(&a_size)
+        });
+
+        let folder_name = folder_key.split('\\').last().unwrap_or("").to_lowercase();
+
+        // Prefer exe whose name matches the app folder, fallback to largest
+        let best = exes.iter().find(|e| {
+            let stem = e.name.trim_end_matches(".exe").to_lowercase();
+            stem == folder_name || stem.contains(&folder_name) || folder_name.contains(&stem)
+        }).or_else(|| exes.first());
+
+        if let Some(entry) = best {
+            let lp = entry.path.to_lowercase();
+            if !seen_paths.contains(&lp) {
+                seen_paths.insert(lp);
+                let name = entry.name.trim_end_matches(".exe").to_string();
+                let icon = icon::extract_icon(&entry.path);
+                by_name.entry(name.clone()).or_insert_with(|| DetectedApp { name, path: entry.path.clone(), icon });
+            }
+        }
+    }
+
+    // ── Phase D: .exe from user-local paths (AppData, etc.) ──
+    if let Ok(entries) = indexer::search_by_path("users", 800, Some(".exe")) {
+        for entry in entries {
+            let lp = entry.path.to_lowercase();
+            if seen_paths.contains(&lp) { continue; }
+            let lower_name = entry.name.to_lowercase();
+            if is_junk_name(&lower_name) { continue; }
+
+            let path_parts: Vec<&str> = lp.split('\\').collect();
+            if is_junk_dir(&path_parts) { continue; }
+
+            if !lp.contains("appdata") || (!lp.contains("\\programs") && !lp.contains("\\start menu")) {
+                continue;
+            }
+
+            seen_paths.insert(lp);
+            let name = entry.name.trim_end_matches(".exe").to_string();
+            let icon = icon::extract_icon(&entry.path);
+            by_name.entry(name.clone()).or_insert_with(|| DetectedApp { name, path: entry.path, icon });
+        }
+    }
+
+    // ── Phase E: Custom scan folders ──
+    let s = store::load(app);
+    for folder in &s.scan_folders {
+        if let Ok(entries) = indexer::search_by_path(folder, 1000, Some(".exe,.lnk")) {
+            for entry in entries {
+                let lp = entry.path.to_lowercase();
+                if seen_paths.contains(&lp) { continue; }
+                let lower_name = entry.name.to_lowercase();
+                if is_junk_name(&lower_name) { continue; }
+
+                let path_parts: Vec<&str> = lp.split('\\').collect();
+                if is_junk_dir(&path_parts) { continue; }
+
+                seen_paths.insert(lp);
+                let name = entry.name.trim_end_matches(".exe").trim_end_matches(".lnk").to_string();
+                let icon = icon::extract_icon(&entry.path);
+                by_name.entry(name.clone()).or_insert_with(|| DetectedApp { name, path: entry.path, icon });
+            }
+        }
+    }
+
+    let mut results: Vec<DetectedApp> = by_name.into_values().collect();
+    results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    for det in &results {
+        let _ = app.emit("scan_app_found", det);
+    }
+    println!("Index scan: found {} apps", results.len());
+    results
+}
+
 #[tauri::command]
 async fn scan_installed_apps(app: tauri::AppHandle) -> Result<Vec<DetectedApp>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let result = tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
             use winreg::enums::{HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER, KEY_READ};
@@ -497,6 +829,7 @@ async fn scan_installed_apps(app: tauri::AppHandle) -> Result<Vec<DetectedApp>, 
             let mut results: Vec<DetectedApp> = Vec::new();
             let mut seen_paths = std::collections::HashSet::new();
 
+            // Phase 1: Registry scan
             for (hive, path) in &keys {
                 let root = RegKey::predef(*hive);
                 let Ok(uninstall_key) = root.open_subkey_with_flags(path, KEY_READ) else { continue };
@@ -548,6 +881,10 @@ async fn scan_installed_apps(app: tauri::AppHandle) -> Result<Vec<DetectedApp>, 
                 }
             }
 
+            // Phase 2: Index scan — find all .exe/.lnk from the index that weren't in registry
+            let index_results = scan_index_for_exes(&app, &mut seen_paths);
+            results.extend(index_results);
+
             results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
             let mut s = store::load(&app);
             s.scanned_apps = results.clone();
@@ -559,7 +896,9 @@ async fn scan_installed_apps(app: tauri::AppHandle) -> Result<Vec<DetectedApp>, 
         {
             vec![]
         }
-    }).await.map_err(|e| e.to_string())
+    }).await.map_err(|e| e.to_string());
+
+    result
 }
 
 #[cfg(target_os = "windows")]
@@ -1362,7 +1701,7 @@ async fn create_shortcut(name: String, target_path: String) -> Result<(), String
             $Shortcut.Save()
         "#, name.replace("\"", ""), current_exe_str, target_path, target_path);
 
-        std::process::Command::new("powershell")
+        crate::hidden_cmd("powershell")
             .args(["-NoProfile", "-Command", &ps_script])
             .output()
             .map_err(|e| e.to_string())?;
@@ -1430,8 +1769,23 @@ pub fn run() {
                 let _ = window.hide();
             }
             
-            // ── Initialize Native Indexer ──
-            everything::init_indexer();
+            // ── Initialize Native Indexer (jwalk + persistent SQLite) ──
+            let app_data_dir = app_handle.path().app_data_dir().unwrap();
+            let index_db_path = app_data_dir.join("index.db").to_string_lossy().to_string();
+            let idx_handle = app_handle.clone();
+            std::thread::spawn(move || {
+                match everything::init_indexer(&index_db_path) {
+                    Ok(()) => {
+                        let total = everything::total_indexed();
+                        let busy = everything::is_indexer_busy();
+                        println!("reEverything: Index ready ({} files, building: {})", total, busy);
+                        let _ = idx_handle.emit("indexer_ready", total);
+                    }
+                    Err(e) => {
+                        println!("reEverything: Init error: {}", e);
+                    }
+                }
+            });
 
             // ── Guardian: monitor startup changes ──
             guardian::start(app_handle.clone());
@@ -1535,7 +1889,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_store,
             add_app,
+            add_apps,
             remove_app,
+            cleanup_missing_apps,
             move_app_to_group,
             launch_app,
             update_tray_menu,
@@ -1567,6 +1923,8 @@ pub fn run() {
             everything_search,
             everything_search_apps,
             is_indexer_ready,
+            get_indexed_count,
+            find_steam_games,
             focus_or_launch_app,
             set_active_theme,
             save_custom_theme,
@@ -1601,6 +1959,15 @@ pub fn run() {
             get_update_check_enabled,
             set_update_check_enabled,
             exit_app,
+            add_scan_folder,
+            remove_scan_folder,
+            get_scan_folders,
+            get_volume,
+            set_volume,
+            get_brightness,
+            set_brightness,
+            get_audio_devices,
+            set_audio_device,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

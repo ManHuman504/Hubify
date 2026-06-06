@@ -17,14 +17,12 @@ const LOGO_SVG = (
 
 export default function Titlebar() {
   return (
-    <div className="titlebar" data-tauri-drag-region>
-      <div className="titlebar-logo" data-tauri-drag-region>
+    <div className="titlebar">
+      <div className="titlebar-spacer" data-tauri-drag-region />
+      <div className="titlebar-center" data-tauri-drag-region>
         <span className="logo-mark">{LOGO_SVG}</span>
         <span className="logo-text">Hubify</span>
       </div>
-      
-      <div className="titlebar-drag" data-tauri-drag-region />
-      
       <div className="titlebar-controls">
         <button className="tb-btn minimize" onClick={() => win.minimize()} title="Minimize">
           <span />

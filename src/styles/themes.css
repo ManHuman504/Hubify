@@ -5,8 +5,8 @@
 [data-theme="dark"] {
   /* Полупрозрачные фоны — Mica/Acrylic просвечивает снизу */
   --bg-base:     rgba(18, 18, 20, 0.0);
-  --bg-surface:  rgba(28, 28, 32, 0.55);
-  --bg-elevated: rgba(36, 36, 42, 0.65);
+  --bg-surface:  rgba(28, 28, 32, 0.40);
+  --bg-elevated: rgba(36, 36, 42, 0.55);
   --bg-hover:    rgba(255, 255, 255, 0.05);
 
   --border:        rgba(255, 255, 255, 0.08);
@@ -21,8 +21,8 @@
   --accent-subtle: rgba(124, 111, 255, 0.14);
 
   --nav-width: 210px;
-  --radius:    8px;
-  --radius-sm: 5px;
+  --radius:    12px;
+  --radius-sm: 8px;
   --titlebar-height: 36px;
 }
 
@@ -44,7 +44,7 @@
   --accent-subtle: rgba(108, 99, 255, 0.1);
 
   --nav-width: 210px;
-  --radius:    8px;
-  --radius-sm: 5px;
+  --radius:    12px;
+  --radius-sm: 8px;
   --titlebar-height: 36px;
 }

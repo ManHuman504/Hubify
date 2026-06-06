@@ -1,8 +1,7 @@
-use std::process::Command;
 use crate::winget::{WingetPackage, WingetPackageDetail};
 
 pub fn is_available() -> bool {
-    Command::new("scoop")
+    crate::hidden_cmd("scoop")
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -14,7 +13,7 @@ pub fn search(query: &str) -> Vec<WingetPackage> {
         return vec![];
     }
 
-    let output = Command::new("scoop")
+    let output = crate::hidden_cmd("scoop")
         .args(["search", query])
         .output();
 
@@ -64,7 +63,7 @@ pub fn show(id: &str) -> Option<WingetPackageDetail> {
     let parts: Vec<&str> = id.split('/').collect();
     let name = if parts.len() == 2 { parts[1] } else { id };
 
-    let output = Command::new("scoop")
+    let output = crate::hidden_cmd("scoop")
         .args(["info", name])
         .output()
         .ok()?;
@@ -97,7 +96,7 @@ pub fn install(id: &str) -> (bool, String) {
     let parts: Vec<&str> = id.split('/').collect();
     let name = if parts.len() == 2 { parts[1] } else { id };
 
-    let output = Command::new("scoop")
+    let output = crate::hidden_cmd("scoop")
         .args(["install", name])
         .output();
 

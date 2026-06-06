@@ -20,6 +20,22 @@ interface UninstallableApp {
 
 type ToolView = 'dashboard' | 'startup' | 'uninstaller' | 'everything' | 'journal' | 'diskmap'
 
+const ICONS = {
+  rocket: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>,
+  trash: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>,
+  clipboard: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>,
+  search: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
+  disk: <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="12" rx="10" ry="10"/><circle cx="12" cy="12" r="3"/><line x1="14" y1="9" x2="18" y2="5"/><polyline points="15 5 18 5 18 8"/></svg>,
+  chevronLeft: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>,
+  refresh: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>,
+}
+
+interface StartupItem {
+  name: string
+  cmd: string
+  enabled: boolean
+}
+
 interface ActivityDay {
   date: string
   apps: { name: string; path: string; minutes: number; cpu: number; mem: number }[]
@@ -143,7 +159,7 @@ function DiskMapView({ onBack }: { onBack: () => void }) {
     <div className="page tools-page">
       <div className="page-header">
         <div className="header-row">
-          <button className="btn-back-tools" onClick={onBack}>← Back to Tools</button>
+          <button className="btn-back-tools" onClick={onBack}>{ICONS.chevronLeft} Back to Tools</button>
         </div>
         <h1 className="page-title">Disk Space Map</h1>
         <p className="page-subtitle">MFT-based scanner — parses $MFT directly for instant results</p>
@@ -165,7 +181,7 @@ function DiskMapView({ onBack }: { onBack: () => void }) {
             </div>
           </div>
           <button className="btn-primary" onClick={startScan} disabled={scanning}>
-            {scanning ? 'Scanning…' : result ? '⟳ Rescan' : '⟳ Scan'}
+            {scanning ? 'Scanning…' : result ? <>{ICONS.refresh} Rescan</> : <>{ICONS.refresh} Scan</>}
           </button>
           {result && (
             <span className="diskmap-info-text">
@@ -187,7 +203,7 @@ function DiskMapView({ onBack }: { onBack: () => void }) {
       {/* Empty state */}
       {!scanning && !result && (
         <div className="page-empty">
-          <span className="empty-icon">💾</span>
+          <span className="empty-icon">{ICONS.disk}</span>
           <p>Select a drive and click Scan</p>
           <p className="empty-hint">Parses the NTFS Master File Table directly — instant results like WizTree</p>
         </div>
@@ -230,7 +246,7 @@ function DiskMapView({ onBack }: { onBack: () => void }) {
                     <div className="diskmap-row-bar" style={{ width: `${barWidth}%` }} />
                     <div className="diskmap-row-info">
                       <span className="diskmap-row-name" title={entry.path}>
-                        {entry.is_dir ? '📁 ' : '📄 '}{entry.name}
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginRight: 4 }}>{entry.is_dir ? <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></> : <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></>}</svg>{entry.name}
                       </span>
                       <span className="diskmap-row-meta">
                         <span className="diskmap-row-size">{formatSize(entry.size)}</span>
@@ -244,7 +260,7 @@ function DiskMapView({ onBack }: { onBack: () => void }) {
                       onClick={e => { e.stopPropagation(); setConfirmDelete(entry) }}
                       disabled={deleting === entry.path}
                     >
-                      {deleting === entry.path ? '…' : '🗑'}
+                      {deleting === entry.path ? '…' : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>}
                     </button>
                   </div>
                 )
@@ -328,7 +344,7 @@ function ActivityJournal({ onBack }: { onBack: () => void }) {
     <div className="page tools-page">
       <div className="page-header">
         <div className="header-row">
-          <button className="btn-back-tools" onClick={onBack}>← Back to Tools</button>
+          <button className="btn-back-tools" onClick={onBack}>{ICONS.chevronLeft} Back to Tools</button>
         </div>
         <h1 className="page-title">Activity Journal</h1>
         <p className="page-subtitle">Complete timeline of app usage — launches, runtime, and resource consumption</p>
@@ -582,7 +598,7 @@ export default function Tools() {
 
         <div className="tools-dashboard-grid hub-grid">
           <button className="tool-tile hub-card-base" onClick={() => setView('startup')}>
-            <span className="tool-tile-icon">🚀</span>
+            <span className="tool-tile-icon">{ICONS.rocket}</span>
             <div className="tool-tile-info">
               <p className="tool-tile-name">Startup Manager</p>
               <p className="tool-tile-desc">Manage apps that start with Windows</p>
@@ -590,7 +606,7 @@ export default function Tools() {
           </button>
 
           <button className="tool-tile hub-card-base" onClick={() => setView('uninstaller')}>
-            <span className="tool-tile-icon">🗑️</span>
+            <span className="tool-tile-icon">{ICONS.trash}</span>
             <div className="tool-tile-info">
               <p className="tool-tile-name">Deep Uninstaller</p>
               <p className="tool-tile-desc">Remove apps with all residual data</p>
@@ -598,7 +614,7 @@ export default function Tools() {
           </button>
 
           <button className="tool-tile hub-card-base" onClick={() => setView('journal')}>
-            <span className="tool-tile-icon">📋</span>
+            <span className="tool-tile-icon">{ICONS.clipboard}</span>
             <div className="tool-tile-info">
               <p className="tool-tile-name">Activity Journal</p>
               <p className="tool-tile-desc">Timeline of app launches and usage history</p>
@@ -606,7 +622,7 @@ export default function Tools() {
           </button>
 
           <button className="tool-tile hub-card-base" onClick={() => setView('everything')}>
-            <span className="tool-tile-icon">🔍</span>
+            <span className="tool-tile-icon">{ICONS.search}</span>
             <div className="tool-tile-info">
               <p className="tool-tile-name">reEverything Search</p>
               <p className="tool-tile-desc">Instant system-wide file search</p>
@@ -615,7 +631,7 @@ export default function Tools() {
 
           <div className="tool-tile hub-card-base disabled">
             <span className="tool-tile-badge">WIP</span>
-            <span className="tool-tile-icon">💾</span>
+            <span className="tool-tile-icon">{ICONS.disk}</span>
             <div className="tool-tile-info">
               <p className="tool-tile-name">Disk Space Map</p>
               <p className="tool-tile-desc">Ещё в разработке — будет готово в одном из следующих обновлений</p>
@@ -633,8 +649,8 @@ export default function Tools() {
         {renderProcessingOverlay()}
         <div className="page-header">
           <div className="header-row">
-            <button className="btn-back-tools" onClick={() => setView('dashboard')}>← Back to Tools</button>
-            <button className="btn-refresh-small" onClick={refreshStartup} title="Refresh list">⟳ Refresh</button>
+            <button className="btn-back-tools" onClick={() => setView('dashboard')}>{ICONS.chevronLeft} Back to Tools</button>
+            <button className="btn-refresh-small" onClick={refreshStartup} title="Refresh list">{ICONS.refresh} Refresh</button>
           </div>
           <h1 className="page-title">Startup Manager</h1>
           <p className="page-subtitle">Currently registered Windows startup items (Run Registry)</p>
@@ -677,7 +693,7 @@ export default function Tools() {
       <div className="page tools-page">
         <div className="page-header">
           <div className="header-row">
-            <button className="btn-back-tools" onClick={() => setView('dashboard')}>← Back to Tools</button>
+            <button className="btn-back-tools" onClick={() => setView('dashboard')}>{ICONS.chevronLeft} Back to Tools</button>
             <div className="tools-search-wrap">
                <input 
                   className="tools-search" 
@@ -719,7 +735,7 @@ export default function Tools() {
             <div key={i} className="startup-row everything-row" onClick={() => launchApp(res.path)} style={{ cursor: 'pointer' }}>
               <div className="startup-info">
                 <span className="startup-name" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {res.is_dir ? '📁' : '📄'} {res.name}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{res.is_dir ? <><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></> : <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></>}</svg> {res.name}
                 </span>
                 <span className="startup-cmd" title={res.path}>{res.path}</span>
               </div>
@@ -772,7 +788,7 @@ export default function Tools() {
 
       <div className="page-header">
         <div className="header-row">
-          <button className="btn-back-tools" onClick={() => setView('dashboard')}>← Back to Tools</button>
+          <button className="btn-back-tools" onClick={() => setView('dashboard')}>{ICONS.chevronLeft} Back to Tools</button>
           <div className="tools-search-wrap">
              <input 
                 className="tools-search" 

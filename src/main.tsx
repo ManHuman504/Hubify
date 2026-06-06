@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import './assets/fonts/fonts.css'
 import './styles/themes.css'
 import './styles/global.css'
 import './App.css'

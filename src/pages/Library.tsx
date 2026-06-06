@@ -73,6 +73,27 @@ export default function Library() {
   const [progress, setProgress] = useState(0)
   const [search, setSearch] = useState('')
   const [picking, setPicking] = useState<DetectedApp | null>(null)
+  const [scanFolders, setScanFolders] = useState<string[]>([])
+
+  useEffect(() => {
+    invoke<string[]>('get_scan_folders').then(setScanFolders).catch(() => {})
+  }, [])
+
+  const addFolder = async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const folder = await open({ directory: true, multiple: false })
+      if (folder) {
+        await invoke('add_scan_folder', { folder })
+        setScanFolders(await invoke<string[]>('get_scan_folders'))
+      }
+    } catch { /* no dialog plugin */ }
+  }
+
+  const removeFolder = async (folder: string) => {
+    await invoke('remove_scan_folder', { folder })
+    setScanFolders(await invoke<string[]>('get_scan_folders'))
+  }
 
   const [streamedApps, setStreamedApps] = useState<DetectedApp[]>([])
   const unlistenRef = useRef<UnlistenFn | null>(null)
@@ -197,6 +218,23 @@ export default function Library() {
               Scanning registry… {streamedApps.length > 0 ? `${streamedApps.length} found` : `${Math.floor(progress)}%`}
             </span>
           </div>
+        )}
+
+        {/* Custom scan folders */}
+        {!loading && scanFolders.length > 0 && (
+          <div className="library-scan-folders">
+            {scanFolders.map(f => (
+              <span key={f} className="scan-folder-tag">
+                <span className="scan-folder-path">{f}</span>
+                <button className="scan-folder-remove" onClick={() => removeFolder(f)}>×</button>
+              </span>
+            ))}
+          </div>
+        )}
+        {!loading && (
+          <button className="btn-secondary scan-folder-add" onClick={addFolder}>
+            + Add folder
+          </button>
         )}
 
         {/* Search */}

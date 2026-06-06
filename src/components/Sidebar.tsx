@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import type { Page } from '../App'
 import type { ReactNode } from 'react'
 import './Sidebar.css'
@@ -52,8 +53,68 @@ interface Props {
   onNavigate: (page: Page) => void
 }
 
+function SliderRow({ icon, value, onChange, onCommit, label }: {
+  icon: ReactNode
+  value: number
+  onChange: (v: number) => void
+  onCommit?: (v: number) => void
+  label: string
+}) {
+  const dragging = useRef(false)
+  const commitRef = useRef(value)
+  const railRef = useRef<HTMLDivElement>(null)
+
+  const calc = useCallback((clientX: number) => {
+    const rail = railRef.current
+    if (!rail) return
+    const rect = rail.getBoundingClientRect()
+    const pct = Math.max(0, Math.min(100, ((clientX - rect.left) / rect.width) * 100))
+    const v = Math.round(pct)
+    commitRef.current = v
+    onChange(v)
+  }, [onChange])
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    dragging.current = true
+    calc(e.clientX)
+    const onMove = (ev: globalThis.MouseEvent) => { if (dragging.current) calc(ev.clientX) }
+    const onUp = () => {
+      dragging.current = false
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      if (onCommit) onCommit(commitRef.current)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  return (
+    <div className="sidebar-slider-row" title={label}>
+      <span className="sidebar-slider-icon">{icon}</span>
+      <div className="sidebar-slider-rail" ref={railRef} onMouseDown={handleMouseDown}>
+        <div className="sidebar-slider-fill" style={{ width: `${value}%` }} />
+      </div>
+    </div>
+  )
+}
+
 export default function Sidebar({ active, onNavigate }: Props) {
   const [collapsed, setCollapsed] = useState(false)
+  const [volume, setVolume] = useState(50)
+  const [brightness, setBrightness] = useState(50)
+
+  useEffect(() => {
+    invoke<number>('get_volume').then(setVolume).catch(e => console.error('get_volume:', e))
+    invoke<number>('get_brightness').then(setBrightness).catch(e => console.error('get_brightness:', e))
+  }, [])
+
+  const commitVolume = useCallback((v: number) => {
+    invoke('set_volume', { level: v }).catch(e => console.error('set_volume:', e))
+  }, [])
+
+  const commitBrightness = useCallback((v: number) => {
+    invoke('set_brightness', { level: v }).catch(e => console.error('set_brightness:', e))
+  }, [])
 
   return (
     <nav className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
@@ -76,6 +137,38 @@ export default function Sidebar({ active, onNavigate }: Props) {
           </li>
         ))}
       </ul>
+
+      {/* HW sliders – only when expanded */}
+      {!collapsed && (
+        <div className="sidebar-hw">
+          <SliderRow
+            icon={
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+              </svg>
+            }
+            value={volume}
+            onChange={setVolume}
+            onCommit={commitVolume}
+            label="Volume"
+          />
+          <SliderRow
+            icon={
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+              </svg>
+            }
+            value={brightness}
+            onChange={setBrightness}
+            onCommit={commitBrightness}
+            label="Brightness"
+          />
+        </div>
+      )}
 
       <div className="sidebar-bottom">
         <button

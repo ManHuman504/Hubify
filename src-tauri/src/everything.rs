@@ -1,8 +1,5 @@
 use serde::{Serialize, Deserialize};
-use std::sync::{Arc, Mutex};
-use std::thread;
-use lazy_static::lazy_static;
-use jwalk::{WalkDir, Parallelism};
+use crate::indexer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EverythingResult {
@@ -11,126 +8,115 @@ pub struct EverythingResult {
     pub is_dir: bool,
 }
 
-struct Index {
-    files: Vec<EverythingResult>,
-    ready: bool,
+fn to_result(e: indexer::IndexEntry) -> EverythingResult {
+    EverythingResult {
+        name: e.name,
+        path: e.path,
+        is_dir: e.is_dir,
+    }
 }
 
-lazy_static! {
-    static ref INDEX: Arc<Mutex<Index>> = Arc::new(Mutex::new(Index { files: Vec::new(), ready: false }));
-}
-
-pub fn init_indexer() {
-    thread::spawn(|| {
-        println!("reEverything: Starting indexer...");
-        let mut local_index = Vec::new();
-        
-        let paths_to_index = vec![
-            std::env::var("ProgramFiles").unwrap_or_else(|_| "C:\\Program Files".into()),
-            std::env::var("ProgramFiles(x86)").unwrap_or_else(|_| "C:\\Program Files (x86)".into()),
-            format!("{}\\AppData\\Local\\Microsoft\\Windows\\Start Menu\\Programs", std::env::var("USERPROFILE").unwrap_or_default()),
-            "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs".to_string(),
-        ];
-
-        for path in paths_to_index {
-            if !std::path::Path::new(&path).exists() { 
-                println!("reEverything: Path does not exist: {}", path);
-                continue; 
-            }
-            
-            println!("reEverything: Indexing {}", path);
-            for entry in WalkDir::new(path)
-                .parallelism(Parallelism::Serial)
-                .skip_hidden(true)
-                .process_read_dir(|_, _, _, dir_entry_results| {
-                    dir_entry_results.retain(|result| result.is_ok());
-                }) 
-            {
-                if let Ok(entry) = entry {
-                    let path_buf = entry.path();
-                    let path_str = path_buf.to_string_lossy().to_string();
-                    
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    let is_dir = entry.file_type().is_dir();
-                    
-                    local_index.push(EverythingResult {
-                        name,
-                        path: path_str,
-                        is_dir,
-                    });
-                }
-            }
-        }
-        
-        let count = local_index.len();
-        let mut idx = INDEX.lock().unwrap();
-        idx.files = local_index;
-        idx.ready = true;
-        println!("reEverything: Indexer finished. Indexed {} items.", count);
-    });
+pub fn init_indexer(db_path: &str) -> Result<(), String> {
+    indexer::init(db_path)
 }
 
 pub fn search(query: &str, limit: usize, ext_filter: Option<&str>) -> Result<Vec<EverythingResult>, String> {
-    let idx = INDEX.lock().unwrap();
-    
-    let q = query.to_lowercase();
-    let exts: Vec<String> = ext_filter
-        .map(|e| e.split(',').map(|s| s.trim().to_lowercase()).collect())
-        .unwrap_or_default();
-
-    println!("reEverything: Searching for '{}' (limit: {}, ext: {:?})", q, limit, exts);
-
-    let mut results = Vec::new();
-    
-    for file in &idx.files {
-        if results.len() >= limit {
-            break;
-        }
-
-        if !exts.is_empty() {
-            let lower_name = file.name.to_lowercase();
-            let matches_ext = exts.iter().any(|ext| lower_name.ends_with(ext));
-            if !matches_ext {
-                continue;
-            }
-        }
-
-        if file.name.to_lowercase().contains(&q) {
-            results.push(file.clone());
-        }
-    }
-
-    println!("reEverything: Found {} results", results.len());
-    Ok(results)
-}
-
-pub fn is_indexer_ready() -> bool {
-    let idx = INDEX.lock().unwrap();
-    idx.ready
+    let results = indexer::search(query, limit, ext_filter)?;
+    Ok(results.into_iter().map(to_result).collect())
 }
 
 pub fn search_apps(query: &str, limit: usize) -> Result<Vec<EverythingResult>, String> {
-    let idx = INDEX.lock().unwrap();
-    
-    let q = query.to_lowercase();
+    let results = indexer::search_apps(query, limit)?;
+    Ok(results.into_iter().map(to_result).collect())
+}
 
-    let mut results = Vec::new();
-    
-    for file in &idx.files {
-        if results.len() >= limit {
-            break;
-        }
+pub fn is_indexer_ready() -> bool {
+    indexer::is_ready()
+}
 
-        let lower_name = file.name.to_lowercase();
-        // Apps are usually .exe or .lnk
-        if !lower_name.ends_with(".exe") && !lower_name.ends_with(".lnk") {
-            continue;
-        }
+pub fn is_indexer_busy() -> bool {
+    indexer::is_indexing()
+}
 
-        if lower_name.contains(&q) {
-            results.push(file.clone());
+pub fn total_indexed() -> i64 {
+    indexer::total_entries()
+}
+
+pub fn find_steam_games() -> Vec<EverythingResult> {
+    let mut games = Vec::new();
+    #[cfg(target_os = "windows")]
+    {
+        use winreg::enums::*;
+        use winreg::RegKey;
+
+        let steam_path = {
+            let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+            let path = r"SOFTWARE\WOW6432Node\Valve\Steam";
+            if let Ok(key) = hklm.open_subkey_with_flags(path, KEY_READ) {
+                key.get_value::<String, _>("InstallPath").ok()
+            } else {
+                let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+                let path = r"SOFTWARE\Valve\Steam";
+                hkcu.open_subkey_with_flags(path, KEY_READ)
+                    .and_then(|k| k.get_value::<String, _>("SteamPath"))
+                    .ok()
+            }
+        };
+
+        if let Some(sp) = steam_path {
+            let mut libs = vec![sp.clone()];
+            let vdf = format!("{}\\steamapps\\libraryfolders.vdf", sp);
+            if let Ok(content) = std::fs::read_to_string(&vdf) {
+                for line in content.lines() {
+                    let t = line.trim();
+                    if t.contains("\"") && t.contains(":") {
+                        if let Some(s) = t.find('"') {
+                            if let Some(e) = t.rfind('"') {
+                                if s < e {
+                                    let lp = &t[s+1..e];
+                                    if lp.contains(':') { libs.push(lp.to_string()); }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            for lib in libs {
+                let common = format!("{}\\steamapps\\common", lib);
+                let dir = std::path::Path::new(&common);
+                if !dir.exists() { continue; }
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.filter_map(|e| e.ok()) {
+                        let gd = entry.path();
+                        if !gd.is_dir() { continue; }
+                        let dn = gd.file_name().unwrap_or_default().to_string_lossy().to_string();
+                        if dn.starts_with('.') || dn == "_CommonRedist" { continue; }
+
+                        let mut best = None;
+                        if let Ok(files) = std::fs::read_dir(&gd) {
+                            for f in files.filter_map(|f| f.ok()) {
+                                let fp = f.path();
+                                if fp.extension().and_then(|e| e.to_str()) == Some("exe") {
+                                    let fn_lower = fp.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+                                    if !fn_lower.contains("unins") && !fn_lower.contains("setup") && !fn_lower.contains("crash") && !fn_lower.contains("redist") {
+                                        best = Some(fp);
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(exe) = best {
+                            let gn = exe.file_stem().unwrap_or_default().to_string_lossy().to_string();
+                            games.push(EverythingResult {
+                                name: gn,
+                                path: exe.to_string_lossy().to_string(),
+                                is_dir: false,
+                            });
+                        }
+                    }
+                }
+            }
         }
     }
-
-    Ok(results)
+    games
 }

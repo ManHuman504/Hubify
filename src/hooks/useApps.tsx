@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, createContext, useContext, ReactNode } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 export interface App {
   id: string
@@ -54,6 +55,7 @@ interface AppsContextType {
   processInfo: Record<string, ProcessInfo>
   theme: ThemeConfig
   addApp: (path: string, name?: string, groupId?: string | null) => Promise<void>
+  addApps: (items: { path: string; name?: string }[], groupId?: string | null) => Promise<void>
   removeApp: (id: string) => Promise<void>
   launchApp: (path: string) => Promise<void>
   killApp: (path: string) => Promise<void>
@@ -141,6 +143,11 @@ export function AppsProvider({ children }: { children: ReactNode }) {
     setApps(prev => [...prev, app])
   }, [])
 
+  const addApps = useCallback(async (items: { path: string; name?: string }[], groupId?: string | null) => {
+    const newApps = await invoke<App[]>('add_apps', { items, groupId: groupId ?? null })
+    setApps(prev => [...prev, ...newApps])
+  }, [])
+
   const removeApp = useCallback(async (id: string) => {
     await invoke('remove_app', { id })
     setApps(prev => prev.filter(a => a.id !== id))
@@ -148,6 +155,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
 
   const launchApp = useCallback(async (path: string) => {
     await invoke('launch_app', { path })
+    getCurrentWindow().hide()
   }, [])
 
   const killApp = useCallback(async (path: string) => {
@@ -214,6 +222,7 @@ export function AppsProvider({ children }: { children: ReactNode }) {
       processInfo,
       theme,
       addApp,
+      addApps,
       removeApp,
       launchApp,
       killApp,

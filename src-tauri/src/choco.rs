@@ -1,8 +1,7 @@
-use std::process::Command;
 use crate::winget::{WingetPackage, WingetPackageDetail};
 
 pub fn is_available() -> bool {
-    Command::new("choco")
+    crate::hidden_cmd("choco")
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -14,7 +13,7 @@ pub fn search(query: &str) -> Vec<WingetPackage> {
         return vec![];
     }
 
-    let output = Command::new("choco")
+    let output = crate::hidden_cmd("choco")
         .args(["search", query, "--limit", "15"])
         .output();
 
@@ -53,7 +52,7 @@ pub fn search(query: &str) -> Vec<WingetPackage> {
 pub fn show(id: &str) -> Option<WingetPackageDetail> {
     if !is_available() { return None; }
     
-    let output = Command::new("choco")
+    let output = crate::hidden_cmd("choco")
         .args(["info", id])
         .output()
         .ok()?;
