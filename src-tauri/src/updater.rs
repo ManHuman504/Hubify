@@ -2,8 +2,8 @@ use serde::{Serialize, Deserialize};
 use std::io::Write;
 use std::path::PathBuf;
 
-const GITHUB_OWNER: &str = "feeloowe";
-const GITHUB_REPO: &str = "hubify";
+const GITHUB_OWNER: &str = "ManHuman504";
+const GITHUB_REPO: &str = "Hubify";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateInfo {

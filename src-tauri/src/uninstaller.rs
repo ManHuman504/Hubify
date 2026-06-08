@@ -64,6 +64,7 @@ pub fn list_apps_fast(hints: Vec<String>) -> Vec<UninstallableApp> {
     apps
 }
 
+#[allow(dead_code)]
 pub fn list_apps() -> Vec<UninstallableApp> {
     list_apps_fast(vec![])
 }

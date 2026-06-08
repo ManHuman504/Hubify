@@ -99,6 +99,7 @@ pub fn get_net_stats(pid: u32) -> NetStats {
 
 /// Count connections for a PID without allocating detail structs (faster)
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 pub fn count_connections(pid: u32) -> u32 {
     use windows::Win32::NetworkManagement::IpHelper::{
         GetExtendedTcpTable, MIB_TCPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,

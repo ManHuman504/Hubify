@@ -584,6 +584,37 @@ export default function Settings() {
                 onUpdateInstalled={() => {}}
               />
             )}
+
+            <div className="settings-section">
+              <p className="settings-section-title">Support</p>
+              <div className="settings-card">
+                <div className="settings-row">
+                  <div className="settings-row-info">
+                    <p className="settings-row-label">Report a Bug</p>
+                    <p className="settings-row-desc">
+                      Open a GitHub issue with pre-filled system info.
+                    </p>
+                  </div>
+                  <button className="detail-btn" onClick={() => invoke('report_bug')}>
+                    Report Bug
+                  </button>
+                </div>
+                <div className="settings-row">
+                  <div className="settings-row-info">
+                    <p className="settings-row-label">GitHub Releases</p>
+                    <p className="settings-row-desc">
+                      Download the latest version manually.
+                    </p>
+                  </div>
+                  <button className="detail-btn" onClick={async () => {
+                    const { openUrl } = await import('@tauri-apps/plugin-opener')
+                    await openUrl('https://github.com/ManHuman504/Hubify/releases/latest')
+                  }}>
+                    Open Releases
+                  </button>
+                </div>
+              </div>
+            </div>
           </>
         )}
       </div>

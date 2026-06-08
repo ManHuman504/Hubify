@@ -31,12 +31,6 @@ fn get_current_startup_map() -> HashMap<String, String> {
 }
 
 pub fn start(app_handle: tauri::AppHandle) {
-    // Initial snapshot
-    {
-        let mut snap = STARTUP_SNAPSHOT.lock().unwrap();
-        *snap = get_current_startup_map();
-    }
-
     // Auto-start Hubify with Windows for guardian coverage
     // (silent — only set if not already present)
     if let Ok(current_exe) = std::env::current_exe() {
@@ -44,6 +38,13 @@ pub fn start(app_handle: tauri::AppHandle) {
         if !crate::autostart::is_autostart_enabled("Hubify") {
             let _ = crate::autostart::set_autostart("Hubify", &path, true);
         }
+    }
+
+    // Initial snapshot — must be taken AFTER adding Hubify to autostart,
+    // otherwise guardian will immediately detect Hubify as new and pop up
+    {
+        let mut snap = STARTUP_SNAPSHOT.lock().unwrap();
+        *snap = get_current_startup_map();
     }
 
     std::thread::spawn(move || {
@@ -91,7 +92,7 @@ fn show_popup(app_handle: &tauri::AppHandle, name: &str, cmd: &str) {
         "window.__guardianData = {}",
         serde_json::to_string(&payload).unwrap()
     );
-    if let Ok(popup) = WebviewWindowBuilder::new(
+    match WebviewWindowBuilder::new(
         app_handle,
         "guardian-popup",
         tauri::WebviewUrl::App("index.html".into()),
@@ -104,6 +105,11 @@ fn show_popup(app_handle: &tauri::AppHandle, name: &str, cmd: &str) {
     .initialization_script(&js)
     .build()
     {
-        let _ = popup.emit("guardian:startup-change", payload);
+        Ok(popup) => {
+            let _ = popup.emit("guardian:startup-change", payload);
+        }
+        Err(e) => {
+            eprintln!("Guardian: failed to create popup window: {}", e);
+        }
     }
 }

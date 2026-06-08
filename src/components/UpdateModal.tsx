@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import './UpdateModal.css'
-import '../components/AddAppDialog.css'
 
 export interface UpdateInfo {
   available: boolean
@@ -45,60 +44,69 @@ export default function UpdateModal({ info, onClose, onUpdateInstalled }: Props)
     }
   }
 
-  const formatSize = (percent: number) => `${Math.round(percent)}%`
-
   return (
-    <div className="dialog-backdrop" onClick={onClose}>
-      <div className="dialog update-dialog" onClick={e => e.stopPropagation()}>
-        <div className="update-header">
-          <h2 className="dialog-title">Update Available</h2>
-          <button className="add-det-back" onClick={onClose}>✕</button>
+    <div className="upd-backdrop" onClick={onClose}>
+      <div className="upd-modal" onClick={e => e.stopPropagation()}>
+        <div className="upd-header">
+          <div className="upd-header-left">
+            <div className="upd-header-icon">⬇</div>
+            <span className="upd-header-title">Update Available</span>
+          </div>
+          <button className="upd-close" onClick={onClose}>✕</button>
         </div>
 
-        <div className="update-version-info">
-          <div className="update-version-badge">
-            <span className="update-version-current">v{info.current_version}</span>
-            <span className="update-version-latest">v{info.latest_version}</span>
+        <div className="upd-versions">
+          <div className="upd-version-card upd-version-current">
+            <div className="upd-version-label">Current</div>
+            <div className="upd-version-number">v{info.current_version}</div>
           </div>
-          <span className="update-arrow">→</span>
+          <span className="upd-version-arrow">→</span>
+          <div className="upd-version-card upd-version-latest">
+            <div className="upd-version-label">Latest</div>
+            <div className="upd-version-number">v{info.latest_version}</div>
+          </div>
+        </div>
+
+        <div className="upd-body">
+          {info.release_notes && (
+            <>
+              <div className="upd-release-label">Release Notes</div>
+              <div className="upd-release-notes">{info.release_notes}</div>
+            </>
+          )}
+
           {info.asset_name && (
-            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{info.asset_name}</span>
+            <div className="upd-asset-name">{info.asset_name}</div>
+          )}
+
+          {state === 'error' && (
+            <div className="upd-error">{errorMsg}</div>
+          )}
+
+          {state === 'downloading' && (
+            <div className="upd-progress">
+              <div className="upd-progress-bar">
+                <div className="upd-progress-fill" style={{ width: `${progress}%` }} />
+              </div>
+              <span className="upd-progress-text">Downloading update… {Math.round(progress)}%</span>
+            </div>
+          )}
+
+          {state === 'downloaded' && (
+            <div className="upd-downloaded-msg">Downloaded — starting installer…</div>
           )}
         </div>
 
-        {info.release_notes && (
-          <div className="update-release-notes">{info.release_notes}</div>
-        )}
-
-        {state === 'error' && (
-          <div className="update-error">{errorMsg}</div>
-        )}
-
-        {state === 'downloading' && (
-          <div className="update-progress">
-            <div className="update-progress-bar">
-              <div className="update-progress-fill" style={{ width: `${progress}%` }} />
-            </div>
-            <span className="update-progress-text">Downloading update... {formatSize(progress)}</span>
-          </div>
-        )}
-
-        {state === 'downloaded' && (
-          <div className="update-progress-text" style={{ color: 'var(--accent)', textAlign: 'center' }}>
-            Downloaded — starting installer...
-          </div>
-        )}
-
-        <div className="dialog-footer">
-          <button className="btn-cancel" onClick={onClose}>
+        <div className="upd-footer">
+          <button className="upd-btn upd-btn-secondary" onClick={onClose}>
             {state === 'downloaded' ? 'Install Later' : 'Remind Later'}
           </button>
           <button
-            className="btn-add"
+            className="upd-btn upd-btn-primary"
             onClick={handleUpdate}
             disabled={state === 'downloading' || state === 'downloaded'}
           >
-            {state === 'downloading' ? 'Downloading...' : 'Update Now'}
+            {state === 'downloading' ? 'Downloading…' : 'Update Now'}
           </button>
         </div>
       </div>

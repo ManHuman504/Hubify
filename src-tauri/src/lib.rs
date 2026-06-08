@@ -674,22 +674,6 @@ fn scan_index_for_exes(app: &tauri::AppHandle, seen_paths: &mut std::collections
 
     let mut by_name: std::collections::HashMap<String, DetectedApp> = std::collections::HashMap::new();
 
-    // ── Phase A: .lnk from Start Menu / Desktop ──
-    for path_filter in &["start menu\\programs", "desktop"] {
-        if let Ok(entries) = indexer::search_by_path(path_filter, 800, Some(".lnk")) {
-            for entry in entries {
-                let lp = entry.path.to_lowercase();
-                if seen_paths.contains(&lp) { continue; }
-                if is_junk_name(&entry.name.to_lowercase()) { continue; }
-
-                seen_paths.insert(lp);
-                let name = entry.name.trim_end_matches(".lnk").to_string();
-                let icon = icon::extract_icon(&entry.path);
-                by_name.entry(name.clone()).or_insert_with(|| DetectedApp { name, path: entry.path, icon });
-            }
-        }
-    }
-
     // ── Phase B: .exe from Steam games ──
     if let Ok(entries) = indexer::search_by_path("steamapps\\common", 1000, Some(".exe")) {
         for entry in entries {
@@ -785,7 +769,7 @@ fn scan_index_for_exes(app: &tauri::AppHandle, seen_paths: &mut std::collections
     // ── Phase E: Custom scan folders ──
     let s = store::load(app);
     for folder in &s.scan_folders {
-        if let Ok(entries) = indexer::search_by_path(folder, 1000, Some(".exe,.lnk")) {
+        if let Ok(entries) = indexer::search_by_path(folder, 1000, Some(".exe")) {
             for entry in entries {
                 let lp = entry.path.to_lowercase();
                 if seen_paths.contains(&lp) { continue; }
@@ -796,7 +780,7 @@ fn scan_index_for_exes(app: &tauri::AppHandle, seen_paths: &mut std::collections
                 if is_junk_dir(&path_parts) { continue; }
 
                 seen_paths.insert(lp);
-                let name = entry.name.trim_end_matches(".exe").trim_end_matches(".lnk").to_string();
+                let name = entry.name.trim_end_matches(".exe").to_string();
                 let icon = icon::extract_icon(&entry.path);
                 by_name.entry(name.clone()).or_insert_with(|| DetectedApp { name, path: entry.path, icon });
             }
@@ -881,7 +865,7 @@ async fn scan_installed_apps(app: tauri::AppHandle) -> Result<Vec<DetectedApp>, 
                 }
             }
 
-            // Phase 2: Index scan — find all .exe/.lnk from the index that weren't in registry
+            // Phase 2: Index scan — find all .exe from the index that weren't in registry
             let index_results = scan_index_for_exes(&app, &mut seen_paths);
             results.extend(index_results);
 
@@ -1409,6 +1393,53 @@ async fn delete_disk_entry(path: String, is_dir: bool) -> Result<(), String> {
             std::fs::remove_file(&path).map_err(|e| e.to_string())
         }
     }).await.map_err(|e| e.to_string())?
+}
+
+// ── Bug Report ────────────────────────────────────────────────
+
+#[tauri::command]
+async fn report_bug() -> Result<(), String> {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let version = updater::get_current_version();
+
+    let body = format!(
+        "## Description\n\n\n## Steps to reproduce\n\n1. \n2. \n3. \n\n## Expected behavior\n\n\n## Actual behavior\n\n\n## System info\n- Hubify v{}\n- OS: {} ({})\n- App started from autostart: {}\n",
+        version, os, arch,
+        std::env::args().any(|a| a == "--launch")
+    );
+
+    let url = format!(
+        "https://github.com/ManHuman504/Hubify/issues/new?labels=bug&body={}",
+        urlencoding(&body)
+    );
+
+    #[cfg(target_os = "windows")]
+    {
+        crate::hidden_cmd("cmd")
+            .args(["/c", "start", "", &url])
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {}", e))?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to open browser: {}", e))?;
+    }
+
+    Ok(())
+}
+
+fn urlencoding(s: &str) -> String {
+    s.bytes().map(|b| {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            b' ' => "+".to_string(),
+            _ => format!("%{:02X}", b),
+        }
+    }).collect()
 }
 
 // ── Updater ───────────────────────────────────────────────────
@@ -1953,6 +1984,7 @@ pub fn run() {
             sync_get_ignored,
             scan_disk,
             delete_disk_entry,
+            report_bug,
             check_for_update,
             download_update,
             install_update,

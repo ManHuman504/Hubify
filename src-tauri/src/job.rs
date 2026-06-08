@@ -10,7 +10,7 @@ use windows::Win32::System::JobObjects::{
 };
 use windows::Win32::System::Threading::{
     CreateProcessW, ResumeThread, PROCESS_INFORMATION, STARTUPINFOW,
-    CREATE_SUSPENDED,
+    PROCESS_CREATION_FLAGS, CREATE_SUSPENDED,
 };
 
 static mut GLOBAL_JOB: Option<HANDLE> = None;
@@ -56,7 +56,7 @@ pub fn launch_process(exe_path: &str) -> Result<(), String> {
             None,
             None,
             false,
-            CREATE_SUSPENDED,
+            CREATE_SUSPENDED | PROCESS_CREATION_FLAGS(0x08000000),
             None,
             None,
             &si,
@@ -99,7 +99,7 @@ unsafe fn launch_with_cmd(path: &str) -> Result<(), String> {
         None,
         None,
         false,
-        CREATE_SUSPENDED,
+        CREATE_SUSPENDED | PROCESS_CREATION_FLAGS(0x08000000),
         None,
         None,
         &si,
